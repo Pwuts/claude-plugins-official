@@ -70,6 +70,16 @@ Messages from other bots and from webhooks are dropped everywhere by default: an
 
 Bot-authored messages arrive with `author_is_bot="true"` and get no typing indicator and no ack reaction — those are for a human waiting on an answer.
 
+### Reactions
+
+Emoji reactions are not delivered unless a channel opts in with `--reactions`. A 👍 on an answer is often the whole reply, and without this the assistant never sees it.
+
+```
+/discord:access group add 846209781206941736 --no-mention --reactions
+```
+
+`requireMention` narrows reactions the same way it narrows messages: with it on (the default), only reactions on messages the bot itself sent are delivered; with `--no-mention`, every reaction in the channel is. The channel's `--allow` list and the `--allow-bots` rule apply to the reacting user as well. Reactions arrive as `<channel ... event="reaction" reaction="👍" message_id="..." on_own_message="true">`. Reactions in DMs are not delivered — there is no per-channel policy to opt in with.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -111,7 +121,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access allow 184695080709324800` | Add a user snowflake directly. |
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
-| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--allow-bots`. |
+| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--allow-bots`, `--reactions`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 
@@ -135,7 +145,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
       "allowFrom": [],
       // Deliver other bots' and webhooks' messages in this channel. Absent = false.
-      "allowBots": false
+      "allowBots": false,
+      // Deliver emoji reactions as events. Absent = false.
+      "reactions": false
     }
   },
 
