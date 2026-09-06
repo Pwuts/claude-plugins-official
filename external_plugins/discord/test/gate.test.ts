@@ -1,7 +1,7 @@
 import { expect, test, beforeEach, afterAll } from 'bun:test'
 import { ChannelType } from 'discord.js'
 import { BOT_ID, captureNotifications, cleanup, mkChannel, mkMsg, writeAccess } from './harness'
-import { client, gate, handleInbound, mcp } from '../server'
+import { client, gate, handleInbound, handleReaction, mcp } from '../server'
 
 client.user = { id: BOT_ID, username: 'claude' } as any
 
@@ -109,5 +109,32 @@ test('a permission reply is only acted on from the DM allowlist', async () => {
   await handleInbound(mkMsg({ authorId: REINIER, username: 'Pwuts', content: 'y abcde' }))
   expect(cap.notes.at(-1).method).toBe('notifications/claude/channel/permission')
   expect(cap.notes.at(-1).params).toEqual({ request_id: 'abcde', behavior: 'allow' })
+  cap.restore()
+})
+
+test('an access.json written before any of this behaves exactly as it did', async () => {
+  // The shape documented in ACCESS.md today: no allowBots, no reactions, no
+  // suppressEmbeds. Missing keys must read as the old behaviour.
+  writeAccess({
+    dmPolicy: 'pairing',
+    allowFrom: [REINIER],
+    groups: { [CHANNEL]: { requireMention: true, allowFrom: [] } },
+    pending: {},
+    mentionPatterns: ['^hey claude\\b'],
+    ackReaction: '👀',
+    replyToMode: 'first',
+    textChunkLimit: 2000,
+    chunkMode: 'newline',
+  })
+  const mention = mkMsg({ authorId: REINIER, mentionsBot: true })
+  expect((await gate(mention)).action).toBe('deliver')
+  expect((await gate(mkMsg({ authorId: REINIER, content: 'unrelated chatter' }))).action).toBe('drop')
+  expect((await gate(mkMsg({ authorId: REINIER, content: 'hey claude ping' }))).action).toBe('deliver')
+  expect((await gate(mkMsg({ authorId: SENTRY, bot: true, mentionsBot: true }))).action).toBe('drop')
+
+  client.channels.fetch = (async (id: string) => (id === CHANNEL ? mkChannel({ id: CHANNEL }) : null)) as any
+  const cap = captureNotifications(mcp)
+  await handleReaction({ emoji: { name: '👍' }, message: { id: '1', channelId: CHANNEL, author: null, fetch: async () => ({ author: { id: BOT_ID } }) } } as any, { id: REINIER, username: 'Pwuts', bot: false } as any)
+  expect(cap.notes).toEqual([])
   cap.restore()
 })
