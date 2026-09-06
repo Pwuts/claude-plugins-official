@@ -94,6 +94,8 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** Deliver messages from other bots and webhooks — alert channels. Own messages never deliver. */
+  allowBots?: boolean
 }
 
 type Access = {
@@ -244,6 +246,8 @@ export async function gate(msg: Message): Promise<GateResult> {
   const isDM = msg.channel.type === ChannelType.DM
 
   if (isDM) {
+    // No pairing codes to bots, and no bot DMs: allowBots is a per-channel opt-in.
+    if (msg.author.bot) return { action: 'drop' }
     if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
     if (access.dmPolicy === 'allowlist') return { action: 'drop' }
 
@@ -284,6 +288,7 @@ export async function gate(msg: Message): Promise<GateResult> {
   if (!policy) return { action: 'drop' }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
+  if (msg.author.bot && !policy.allowBots) return { action: 'drop' }
   if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
     return { action: 'drop' }
   }
@@ -873,7 +878,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Our own messages never come back in; other bots are gated per channel.
+  if (msg.author.id === client.user?.id) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
@@ -900,12 +906,14 @@ export async function handleInbound(msg: Message): Promise<void> {
     dmChannelUsers.set(chat_id, msg.author.id)
   }
 
+  const access = result.access
+
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
-  // relaying as chat. The sender is already gate()-approved at this point
-  // (non-allowlisted senders were dropped above), so we trust the reply.
+  // relaying as chat. Requests only ever go to allowFrom DMs, so the reply
+  // has to come from the same list — the same rule the button handler uses.
   const permMatch = PERMISSION_REPLY_RE.exec(msg.content)
-  if (permMatch) {
+  if (permMatch && access.allowFrom.includes(msg.author.id)) {
     void mcp.notification({
       method: 'notifications/claude/channel/permission',
       params: {
@@ -918,15 +926,15 @@ export async function handleInbound(msg: Message): Promise<void> {
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~10s elapses).
-  if ('sendTyping' in msg.channel) {
-    void msg.channel.sendTyping().catch(() => {})
-  }
-
-  // Ack reaction — lets the user know we're processing. Fire-and-forget.
-  const access = result.access
-  if (access.ackReaction) {
-    void msg.react(access.ackReaction).catch(() => {})
+  // Typing indicator and ack reaction are for a human waiting on an answer.
+  // An alert channel would just collect them under every bot post.
+  if (!msg.author.bot) {
+    if ('sendTyping' in msg.channel) {
+      void msg.channel.sendTyping().catch(() => {})
+    }
+    if (access.ackReaction) {
+      void msg.react(access.ackReaction).catch(() => {})
+    }
   }
 
   // Attachments are listed (name/type/size) but not downloaded — the model
@@ -988,6 +996,7 @@ export async function inboundMeta(
   meta.mentions_bot = String(isDM || (await isMentioned(msg, access.mentionPatterns)))
   const mentions = [...msg.mentions.users.keys()]
   if (mentions.length > 0) meta.mentions = mentions.join(',')
+  if (msg.author.bot) meta.author_is_bot = 'true'
 
   if (atts.length > 0) {
     meta.attachment_count = String(atts.length)
