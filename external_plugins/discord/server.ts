@@ -22,6 +22,8 @@ import {
   GatewayIntentBits,
   Partials,
   ChannelType,
+  ThreadAutoArchiveDuration,
+  RESTJSONErrorCodes,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
@@ -122,6 +124,12 @@ export function defaultAccess(): Access {
 }
 
 const MAX_CHUNK_LIMIT = 2000
+const THREAD_ARCHIVE_DURATIONS: number[] = [
+  ThreadAutoArchiveDuration.OneHour,
+  ThreadAutoArchiveDuration.OneDay,
+  ThreadAutoArchiveDuration.ThreeDays,
+  ThreadAutoArchiveDuration.OneWeek,
+]
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 // reply's files param takes any path. .env is ~60 bytes and ships as an
@@ -571,6 +579,24 @@ export const TOOLS = [
     },
   },
   {
+    name: 'create_thread',
+    description:
+      'Start a thread in a Discord channel. Pass message_id to branch off an existing message, or omit it for a standalone thread. A thread under an opted-in channel delivers like the channel itself — reply into it by passing the returned id as chat_id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channel_id: { type: 'string', description: 'Parent channel ID — a text or announcement channel, not a thread.' },
+        name: { type: 'string', description: 'Thread name. Discord caps it at 100 characters.' },
+        message_id: { type: 'string', description: 'Branch the thread off this message.' },
+        auto_archive_duration: {
+          type: 'number',
+          description: 'Minutes of inactivity before the thread archives: 60, 1440, 4320 or 10080. Default 4320 (3 days).',
+        },
+      },
+      required: ['channel_id', 'name'],
+    },
+  },
+  {
     name: 'fetch_messages',
     description:
       "Fetch recent messages from a Discord channel. Returns oldest-first with message IDs. Discord's search API isn't exposed to bots, so this is the only way to look back.",
@@ -647,6 +673,24 @@ export async function callTool(name: string, args: Record<string, unknown>) {
             : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
         return { content: [{ type: 'text', text: result }] }
       }
+      case 'create_thread': {
+        const channel_id = args.channel_id as string
+        const ch = await fetchAllowedChannel(channel_id)
+        if (ch.type !== ChannelType.GuildText && ch.type !== ChannelType.GuildAnnouncement) {
+          throw new Error(`channel ${channel_id} does not take threads — pass a text or announcement channel, not a thread or forum`)
+        }
+        const name = args.name as string
+        if (!name) throw new Error('name is required')
+        const autoArchiveDuration = (args.auto_archive_duration as number | undefined) ?? ThreadAutoArchiveDuration.ThreeDays
+        if (!THREAD_ARCHIVE_DURATIONS.includes(autoArchiveDuration)) {
+          throw new Error(`auto_archive_duration must be one of ${THREAD_ARCHIVE_DURATIONS.join(', ')}`)
+        }
+        const message_id = args.message_id as string | undefined
+        const thread = message_id
+          ? await (await fetchMessage(ch, message_id)).startThread({ name, autoArchiveDuration })
+          : await ch.threads.create({ name, autoArchiveDuration })
+        return { content: [{ type: 'text', text: `thread created (id: ${thread.id}) — reply into it with chat_id ${thread.id}` }] }
+      }
       case 'fetch_messages': {
         const ch = await fetchAllowedChannel(args.channel as string)
         const limit = Math.min((args.limit as number) ?? 20, 100)
@@ -710,6 +754,22 @@ export async function callTool(name: string, args: Record<string, unknown>) {
       content: [{ type: 'text', text: `${name} failed: ${msg}` }],
       isError: true,
     }
+  }
+}
+
+// discord.js reports a deleted message as the bare API string "Unknown
+// Message", which reads like a bug in the call rather than a gone message.
+export async function fetchMessage(
+  ch: { messages: { fetch(id: string): Promise<Message> } },
+  id: string,
+): Promise<Message> {
+  try {
+    return await ch.messages.fetch(id)
+  } catch (err) {
+    if ((err as { code?: unknown }).code === RESTJSONErrorCodes.UnknownMessage) {
+      throw new Error(`message ${id} no longer exists in this channel — it was deleted, or the id belongs to another channel`)
+    }
+    throw err
   }
 }
 
