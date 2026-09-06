@@ -87,6 +87,26 @@ See **[ACCESS.md](./ACCESS.md)** for DM policies, guild channels, mention detect
 
 Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mode, right-click → Copy ID). Default policy is `pairing`. Guild channels are opt-in per channel ID.
 
+## Inbound messages
+
+Each message reaches the assistant as a one-line `<channel>` tag. The
+attributes say who is talking and, crucially, *who they are talking to* — in a
+channel with more than one human, a reply to someone else with no mention of
+the bot is not addressed to the assistant.
+
+| Attribute | Meaning |
+| --- | --- |
+| `chat_id` | Channel (or thread) ID. Pass it back to `reply`. |
+| `message_id` | This message's ID. Use with `react`, `edit_message`, `create_thread`. |
+| `user` / `user_id` | Author's display name and snowflake. The snowflake is the identity; names are mutable. |
+| `ts` | ISO timestamp. |
+| `channel_name` | Channel name, when the channel has one (DMs don't). |
+| `mentions_bot` | `true` when the message @mentions the bot, replies to one of its messages, matches a `mentionPatterns` regex, or is a DM. |
+| `mentions` | Comma-separated snowflakes of everyone mentioned. |
+| `reply_to` / `reply_to_user_id` | Set when the message is a reply: the message it replies to, and that message's author. Absent `reply_to_user_id` means the parent was deleted or unreadable. |
+| `thread` / `parent_id` | `thread="true"` inside a thread, with the parent channel's ID. |
+| `attachment_count` / `attachments` | Present when the message has attachments; see below. |
+
 ## Tools exposed to the assistant
 
 | Tool | Purpose |
