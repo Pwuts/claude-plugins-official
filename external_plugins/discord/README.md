@@ -59,6 +59,13 @@ Writes `DISCORD_BOT_TOKEN=...` to `~/.claude/channels/discord/.env`. You can als
 
 > To run multiple bots on one machine (different tokens, separate allowlists), point `DISCORD_STATE_DIR` at a different directory per instance.
 
+> **One connection per bot.** The server locks its state directory at startup.
+> A second session started against the same directory names the holder's pid on
+> stderr and exits without connecting — Discord delivers every event to every
+> connection, so two of them answer the same message twice. A lock left behind
+> by a crashed process is reclaimed on the next start; `instance.lock` only
+> needs deleting by hand if its pid has been reused by something else.
+
 **6. Relaunch with the channel flag.**
 
 The server won't connect without this — exit your session and start a new one:

@@ -56,6 +56,7 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN
 const STATIC = process.env.DISCORD_ACCESS_MODE === 'static'
 
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const LOCK_FILE = join(STATE_DIR, 'instance.lock')
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -786,6 +787,55 @@ export async function callTool(name: string, args: Record<string, unknown>) {
   }
 }
 
+// One gateway connection per token: a second one gets its own copy of every
+// event, so two sessions answer the same message. Keyed on the state dir,
+// which is already the per-bot key (DISCORD_STATE_DIR).
+export function acquireInstanceLock(
+  dir: string,
+): { ok: true; release(): void } | { ok: false; holder: LockHolder | null } {
+  const file = join(dir, 'instance.lock')
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const holder: LockHolder = { pid: process.pid, startedAt: new Date().toISOString() }
+      writeFileSync(file, JSON.stringify(holder), { flag: 'wx', mode: 0o600 })
+      return { ok: true, release: () => releaseInstanceLock(file) }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    }
+    const holder = readLockHolder(file)
+    if (holder && isAlive(holder.pid)) return { ok: false, holder }
+    // Holder is gone, or the file is unreadable — either way it's stale.
+    rmSync(file, { force: true })
+  }
+  return { ok: false, holder: readLockHolder(file) }
+}
+
+type LockHolder = { pid: number; startedAt: string }
+
+function releaseInstanceLock(file: string): void {
+  if (readLockHolder(file)?.pid === process.pid) rmSync(file, { force: true })
+}
+
+function readLockHolder(file: string): LockHolder | null {
+  try {
+    const h = JSON.parse(readFileSync(file, 'utf8')) as Partial<LockHolder>
+    return typeof h.pid === 'number' ? { pid: h.pid, startedAt: String(h.startedAt ?? 'unknown') } : null
+  } catch {
+    return null
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM: the pid exists, it just isn't ours to signal.
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
 // discord.js reports a deleted message as the bare API string "Unknown
 // Message", which reads like a bug in the call rather than a gone message.
 export async function fetchMessage(
@@ -805,9 +855,11 @@ export async function fetchMessage(
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the gateway stays connected as a zombie holding resources.
 let shuttingDown = false
+let instanceLock: { release(): void } | null = null
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
+  instanceLock?.release()
   process.stderr.write('discord channel: shutting down\n')
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(client.destroy()).finally(() => process.exit(0))
@@ -1030,6 +1082,18 @@ async function main(): Promise<void> {
     )
     process.exit(1)
   }
+
+  const lock = acquireInstanceLock(STATE_DIR)
+  if (!lock.ok) {
+    process.stderr.write(
+      `discord channel: another instance is already connected` +
+      (lock.holder ? ` (pid ${lock.holder.pid}, since ${lock.holder.startedAt})` : '') + `\n` +
+      `  Discord delivers every event to every connection, so a second one duplicates them. Not connecting.\n` +
+      `  If that process is gone, delete ${LOCK_FILE}. For a second bot, point DISCORD_STATE_DIR elsewhere.\n`,
+    )
+    process.exit(1)
+  }
+  instanceLock = lock
 
   if (!STATIC) setInterval(checkApprovals, 5000).unref()
 
