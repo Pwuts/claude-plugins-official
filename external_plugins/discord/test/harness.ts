@@ -57,7 +57,9 @@ export function mkChannel(o: {
     isTextBased: () => true,
     sendTyping: async () => {},
     messages: {
+      calls: [] as any[],
       fetch: async (arg: any) => {
+        ch.messages.calls.push(arg)
         if (typeof arg === 'object' && arg !== null && !('id' in arg)) {
           return new Map(Object.entries(store).map(([k, v]) => [k, v])) as any
         }
@@ -68,12 +70,14 @@ export function mkChannel(o: {
       },
     },
     threads: {
+      active: new Map<string, any>(),
+      archived: new Map<string, any>(),
       create: async (opts: any) => {
         ch.threadsCreated.push(opts)
         return { id: '300000000000000009', name: opts.name }
       },
-      fetchActive: async () => ({ threads: new Map() }),
-      fetchArchived: async () => ({ threads: new Map() }),
+      fetchActive: async () => ({ threads: ch.threads.active }),
+      fetchArchived: async () => ({ threads: ch.threads.archived }),
     },
     threadsCreated: [] as any[],
     send: async (payload: any) => {

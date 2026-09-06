@@ -128,3 +128,38 @@ test('every chunk of a split reply gets the flag', async () => {
   expect(ch.sent.length).toBe(2)
   expect(ch.sent.map((s: any) => s.flags)).toEqual([MessageFlags.SuppressEmbeds, MessageFlags.SuppressEmbeds])
 })
+
+test('fetch_messages pages back with before', async () => {
+  const ch = mkChannel({ id: CHANNEL, messages: { '5': mkMsg({ id: '5', content: 'older' }) } })
+  serveChannels(ch)
+  await callTool('fetch_messages', { channel: CHANNEL, limit: 5, before: '10' })
+  expect(ch.messages.calls.at(-1)).toEqual({ limit: 5, before: '10' })
+
+  await callTool('fetch_messages', { channel: CHANNEL })
+  expect(ch.messages.calls.at(-1)).toEqual({ limit: 20 })
+})
+
+test('list_threads reports active and archived threads', async () => {
+  const ch = mkChannel({ id: CHANNEL })
+  ch.threads.active.set('1', { id: '1', name: 'CI is red' })
+  ch.threads.archived.set('2', { id: '2', name: 'old standup' })
+  serveChannels(ch)
+  const out = text(await callTool('list_threads', { channel_id: CHANNEL }))
+  expect(out).toContain('CI is red  (id: 1)')
+  expect(out).toContain('old standup  (id: 2, archived)')
+})
+
+test('list_threads says so when there are none', async () => {
+  serveChannels(mkChannel({ id: CHANNEL }))
+  expect(text(await callTool('list_threads', { channel_id: CHANNEL }))).toBe('(no threads)')
+})
+
+test.each(['react', 'edit_message', 'delete_message', 'download_attachment'])(
+  '%s reports a deleted message as gone',
+  async tool => {
+    serveChannels(mkChannel({ id: CHANNEL, messages: {} }))
+    const res = await callTool(tool, { chat_id: CHANNEL, message_id: '404', text: 'x', emoji: '👍' })
+    expect(res.isError).toBe(true)
+    expect(text(res)).toContain('no longer exists')
+  },
+)
