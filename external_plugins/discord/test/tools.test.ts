@@ -77,3 +77,20 @@ test('create_thread on a deleted message says so instead of "Unknown Message"', 
   expect(res.isError).toBe(true)
   expect(text(res)).toContain('no longer exists')
 })
+
+test('delete_message removes a message the bot sent', async () => {
+  const mine = mkMsg({ id: '888', authorId: BOT_ID, username: 'claude', bot: true })
+  serveChannels(mkChannel({ id: CHANNEL, messages: { '888': mine } }))
+  const res = await callTool('delete_message', { chat_id: CHANNEL, message_id: '888' })
+  expect(res.isError).toBeUndefined()
+  expect(mine.deleted).toBe(true)
+})
+
+test('delete_message refuses someone else\'s message', async () => {
+  const theirs = mkMsg({ id: '889', authorId: REINIER, username: 'Pwuts' })
+  serveChannels(mkChannel({ id: CHANNEL, messages: { '889': theirs } }))
+  const res = await callTool('delete_message', { chat_id: CHANNEL, message_id: '889' })
+  expect(res.isError).toBe(true)
+  expect(text(res)).toContain('did not send')
+  expect(theirs.deleted).toBeUndefined()
+})
