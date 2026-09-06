@@ -6,7 +6,7 @@ import { callTool, client, gate } from '../server'
 client.user = { id: BOT_ID, username: 'claude' } as any
 
 const CHANNEL = '200000000000000001'
-const REINIER = '244903587505897472'
+const OWNER = '510000000000000001'
 
 function serveChannels(...chans: any[]): void {
   const byId = new Map(chans.map(c => [c.id, c]))
@@ -20,7 +20,7 @@ function text(res: any): string {
 beforeEach(() => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } },
   })
 })
@@ -67,7 +67,7 @@ test('create_thread refuses a thread as its parent', async () => {
 
 test('a message in a new thread delivers on the parent channel opt-in', async () => {
   const thread = mkChannel({ id: '300000000000000009', type: ChannelType.PublicThread, parentId: CHANNEL })
-  const result = await gate(mkMsg({ channel: thread, authorId: REINIER }))
+  const result = await gate(mkMsg({ channel: thread, authorId: OWNER }))
   expect(result.action).toBe('deliver')
 })
 
@@ -76,4 +76,21 @@ test('create_thread on a deleted message says so instead of "Unknown Message"', 
   const res = await callTool('create_thread', { channel_id: CHANNEL, message_id: '404', name: 'x' })
   expect(res.isError).toBe(true)
   expect(text(res)).toContain('no longer exists')
+})
+
+test('delete_message removes a message the bot sent', async () => {
+  const mine = mkMsg({ id: '888', authorId: BOT_ID, username: 'claude', bot: true })
+  serveChannels(mkChannel({ id: CHANNEL, messages: { '888': mine } }))
+  const res = await callTool('delete_message', { chat_id: CHANNEL, message_id: '888' })
+  expect(res.isError).toBeUndefined()
+  expect(mine.deleted).toBe(true)
+})
+
+test('delete_message refuses someone else\'s message', async () => {
+  const theirs = mkMsg({ id: '889', authorId: OWNER, username: 'owner' })
+  serveChannels(mkChannel({ id: CHANNEL, messages: { '889': theirs } }))
+  const res = await callTool('delete_message', { chat_id: CHANNEL, message_id: '889' })
+  expect(res.isError).toBe(true)
+  expect(text(res)).toContain('did not send')
+  expect(theirs.deleted).toBeUndefined()
 })

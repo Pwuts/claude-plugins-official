@@ -567,6 +567,19 @@ export const TOOLS = [
     },
   },
   {
+    name: 'delete_message',
+    description:
+      "Delete a message the bot sent. Only the bot's own messages — deleting anyone else's is refused, even where Discord would permit it.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string' },
+        message_id: { type: 'string' },
+      },
+      required: ['chat_id', 'message_id'],
+    },
+  },
+  {
     name: 'download_attachment',
     description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read.',
     inputSchema: {
@@ -725,6 +738,17 @@ export async function callTool(name: string, args: Record<string, unknown>) {
         const msg = await ch.messages.fetch(args.message_id as string)
         const edited = await msg.edit(args.text as string)
         return { content: [{ type: 'text', text: `edited (id: ${edited.id})` }] }
+      }
+      case 'delete_message': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        const msg = await fetchMessage(ch, args.message_id as string)
+        if (msg.author.id !== client.user?.id) {
+          throw new Error(
+            `refusing to delete a message the bot did not send (author: ${msg.author.username}) — delete_message only removes the bot's own messages`,
+          )
+        }
+        await msg.delete()
+        return { content: [{ type: 'text', text: `deleted (id: ${msg.id})` }] }
       }
       case 'download_attachment': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
