@@ -101,6 +101,8 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+**`suppressEmbeds`** (default `true`) strips Discord's link preview cards from outbound messages. A reply with ten PR links renders as ten preview boxes otherwise. The `reply` tool's `suppress_embeds` parameter overrides it per message.
+
 ## Skill reference
 
 | Command | Effect |
@@ -113,7 +115,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--allow-bots`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
-| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`. |
 
 ## Config file
 
@@ -152,6 +154,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
   "textChunkLimit": 2000,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Strip link preview cards from outbound messages. Absent = true.
+  "suppressEmbeds": true
 }
 ```

@@ -24,6 +24,7 @@ import {
   ChannelType,
   ThreadAutoArchiveDuration,
   RESTJSONErrorCodes,
+  MessageFlags,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
@@ -115,6 +116,8 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** Strip link preview cards from outbound messages. Default: true. */
+  suppressEmbeds?: boolean
 }
 
 export function defaultAccess(): Access {
@@ -162,6 +165,7 @@ export function readAccessFile(): Access {
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
       ackReaction: parsed.ackReaction,
+      suppressEmbeds: parsed.suppressEmbeds,
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
@@ -542,6 +546,10 @@ export const TOOLS = [
           items: { type: 'string' },
           description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
         },
+        suppress_embeds: {
+          type: 'boolean',
+          description: 'Link preview cards. Off by default — ten links would otherwise fill the channel with preview boxes. Pass false when a preview is the point.',
+        },
       },
       required: ['chat_id', 'text'],
     },
@@ -662,6 +670,7 @@ export async function callTool(name: string, args: Record<string, unknown>) {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
+        const suppressEmbeds = (args.suppress_embeds as boolean | undefined) ?? access.suppressEmbeds ?? true
         const chunks = chunk(text, limit, mode)
         const sentIds: string[] = []
 
@@ -673,6 +682,7 @@ export async function callTool(name: string, args: Record<string, unknown>) {
               (replyMode === 'all' || i === 0)
             const sent = await ch.send({
               content: chunks[i],
+              ...(suppressEmbeds ? { flags: MessageFlags.SuppressEmbeds } : {}),
               ...(i === 0 && files.length > 0 ? { files } : {}),
               ...(shouldReplyTo
                 ? { reply: { messageReference: reply_to, failIfNotExists: false } }

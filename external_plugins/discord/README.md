@@ -119,7 +119,7 @@ the bot is not addressed to the assistant.
 
 | Tool | Purpose |
 | --- | --- |
-| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Returns the sent message ID(s). |
+| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Link preview cards are suppressed unless `suppress_embeds: false` — a message with ten links otherwise takes over the channel. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to any message by ID. Unicode emoji work directly; custom emoji need `<:name:id>` form. |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
 | `create_thread` | Start a thread on a channel, optionally branching off a message (`message_id`). Takes `name` and `auto_archive_duration` (60 / 1440 / 4320 / 10080 minutes, default 4320). Returns the thread ID — pass it as `chat_id` to reply inside the thread. Threads inherit their parent channel's opt-in, so a new one delivers straight away. |

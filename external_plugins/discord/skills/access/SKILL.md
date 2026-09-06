@@ -114,11 +114,12 @@ never deliver.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `mentionPatterns`. Validate types:
+`textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`. Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
+- `suppressEmbeds`: boolean — strip link preview cards from replies (default true)
 - `mentionPatterns`: JSON array of regex strings
 
 Read, set the key, write, confirm.
