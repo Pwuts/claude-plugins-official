@@ -4,6 +4,25 @@ Connect a Discord bot to your Claude Code with an MCP server.
 
 When the bot receives a message, the MCP server forwards it to Claude and provides tools to reply, react, and edit messages.
 
+## This fork
+
+This is a fork of the [official Discord plugin](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord), maintained at [Pwuts/claude-plugins-official](https://github.com/Pwuts/claude-plugins-official) on top of upstream `main`. It adds what running a bot daily across DMs, shared channels and threads turned out to need:
+
+- Tell a message aimed at the assistant from one aimed at someone else — inbound messages carry the mentions, the reply target and its author, the channel name, and thread ids.
+- Start a thread with `create_thread`, and take back a message the bot sent with `delete_message`.
+- Page further back through history with `before`, and find existing threads with `list_threads`.
+- Get told a message no longer exists, instead of Discord's bare "Unknown Message".
+- Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
+- Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
+- Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.
+- Answer a permission prompt only from an allowlisted DM, not from anywhere the bot can read.
+- Run one connection per bot: a second instance on the same state directory refuses to start instead of answering every message twice.
+- Change any of it with a test suite behind you — `bun test` covers the message gate and the tools.
+
+The rest of this README describes the fork, so the tables below already include these.
+
+Installing it differs from upstream in one step: register this directory as a local marketplace of your own and install from that, then launch with `--dangerously-load-development-channels plugin:discord@<your-marketplace>` in place of `--channels`, since a locally added marketplace is not on the `--channels` allowlist.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) — the MCP server runs on Bun. Install with `curl -fsSL https://bun.sh/install | bash`.
