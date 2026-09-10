@@ -6,8 +6,8 @@ import { callTool, client, handleReaction, mcp } from '../server'
 client.user = { id: BOT_ID, username: 'claude' } as any
 
 const CHANNEL = '200000000000000001'
-const REINIER = '244903587505897472'
-const TORAN = '246045816865816577'
+const OWNER = '510000000000000001'
+const TEAMMATE = '520000000000000002'
 
 function serveChannels(...chans: any[]): void {
   const byId = new Map(chans.map(c => [c.id, c]))
@@ -21,23 +21,23 @@ function mkReaction(o: { messageId?: string; authorId?: string; emoji?: { name: 
       id: o.messageId ?? '888',
       channelId: o.channelId ?? CHANNEL,
       author: o.authorId ? { id: o.authorId, username: 'someone' } : null,
-      fetch: async () => ({ author: { id: o.authorId ?? REINIER } }),
+      fetch: async () => ({ author: { id: o.authorId ?? OWNER } }),
     },
   }
 }
 
-const REINIER_USER = { id: REINIER, username: 'Pwuts', bot: false }
+const OWNER_USER = { id: OWNER, username: 'owner', bot: false }
 
 function withReactions(extra: Record<string, unknown> = {}): void {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [CHANNEL]: { requireMention: false, allowFrom: [], reactions: true, ...extra } },
   })
 }
 
 beforeEach(() => {
-  serveChannels(mkChannel({ id: CHANNEL, name: 'eng-general' }))
+  serveChannels(mkChannel({ id: CHANNEL, name: 'general' }))
   withReactions()
 })
 afterAll(cleanup)
@@ -48,22 +48,22 @@ test('the client subscribes to guild reaction events', () => {
 
 test('a reaction in an opted-in channel is delivered with its emoji and target', async () => {
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction({ authorId: TORAN }), REINIER_USER as any)
+  await handleReaction(mkReaction({ authorId: TEAMMATE }), OWNER_USER as any)
   const meta = cap.notes.at(-1).params.meta
   expect(meta.event).toBe('reaction')
   expect(meta.reaction).toBe('👍')
   expect(meta.message_id).toBe('888')
-  expect(meta.user_id).toBe(REINIER)
+  expect(meta.user_id).toBe(OWNER)
   expect(meta.chat_id).toBe(CHANNEL)
-  expect(meta.channel_name).toBe('eng-general')
+  expect(meta.channel_name).toBe('general')
   expect(meta.on_own_message).toBe('false')
   cap.restore()
 })
 
 test('a channel without reactions: true delivers nothing', async () => {
-  writeAccess({ dmPolicy: 'allowlist', allowFrom: [REINIER], groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } } })
+  writeAccess({ dmPolicy: 'allowlist', allowFrom: [OWNER], groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } } })
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction(), REINIER_USER as any)
+  await handleReaction(mkReaction(), OWNER_USER as any)
   expect(cap.notes).toEqual([])
   cap.restore()
 })
@@ -71,10 +71,10 @@ test('a channel without reactions: true delivers nothing', async () => {
 test('requireMention narrows reactions to messages the bot sent', async () => {
   withReactions({ requireMention: true })
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction({ authorId: TORAN }), REINIER_USER as any)
+  await handleReaction(mkReaction({ authorId: TEAMMATE }), OWNER_USER as any)
   expect(cap.notes).toEqual([])
 
-  await handleReaction(mkReaction({ messageId: '889', authorId: BOT_ID }), REINIER_USER as any)
+  await handleReaction(mkReaction({ messageId: '889', authorId: BOT_ID }), OWNER_USER as any)
   expect(cap.notes.length).toBe(1)
   expect(cap.notes[0].params.meta.on_own_message).toBe('true')
   cap.restore()
@@ -89,7 +89,7 @@ test('a reaction on a message this process just sent counts as its own', async (
 
   const cap = captureNotifications(mcp)
   // author is null and fetch() reports someone else — only recentSentIds knows.
-  await handleReaction({ emoji: { name: '👍', id: null }, message: { id, channelId: CHANNEL, author: null, fetch: async () => ({ author: { id: TORAN } }) } } as any, REINIER_USER as any)
+  await handleReaction({ emoji: { name: '👍', id: null }, message: { id, channelId: CHANNEL, author: null, fetch: async () => ({ author: { id: TEAMMATE } }) } } as any, OWNER_USER as any)
   expect(cap.notes.length).toBe(1)
   cap.restore()
 })
@@ -116,19 +116,19 @@ test('a bot reaction needs allowBots', async () => {
 })
 
 test('the channel allowFrom list applies to reactions', async () => {
-  withReactions({ allowFrom: [TORAN] })
+  withReactions({ allowFrom: [TEAMMATE] })
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction(), REINIER_USER as any)
+  await handleReaction(mkReaction(), OWNER_USER as any)
   expect(cap.notes).toEqual([])
 
-  await handleReaction(mkReaction(), { id: TORAN, username: 'torantula', bot: false } as any)
+  await handleReaction(mkReaction(), { id: TEAMMATE, username: 'teammate', bot: false } as any)
   expect(cap.notes.length).toBe(1)
   cap.restore()
 })
 
 test('a custom emoji is reported in the <:name:id> form', async () => {
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction({ emoji: { name: 'shipit', id: '5551234' } }), REINIER_USER as any)
+  await handleReaction(mkReaction({ emoji: { name: 'shipit', id: '5551234' } }), OWNER_USER as any)
   expect(cap.notes.at(-1).params.meta.reaction).toBe('<:shipit:5551234>')
   cap.restore()
 })
@@ -137,7 +137,7 @@ test('a reaction in a thread reports the thread and its parent', async () => {
   const thread = mkChannel({ id: '300000000000000001', type: ChannelType.PublicThread, name: 'review', parentId: CHANNEL })
   serveChannels(thread)
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction({ channelId: '300000000000000001' }), REINIER_USER as any)
+  await handleReaction(mkReaction({ channelId: '300000000000000001' }), OWNER_USER as any)
   const meta = cap.notes.at(-1).params.meta
   expect(meta.thread).toBe('true')
   expect(meta.parent_id).toBe(CHANNEL)
@@ -147,7 +147,7 @@ test('a reaction in a thread reports the thread and its parent', async () => {
 test('a DM reaction is not delivered', async () => {
   serveChannels(mkChannel({ id: '600000000000000001', type: ChannelType.DM }))
   const cap = captureNotifications(mcp)
-  await handleReaction(mkReaction({ channelId: '600000000000000001' }), REINIER_USER as any)
+  await handleReaction(mkReaction({ channelId: '600000000000000001' }), OWNER_USER as any)
   expect(cap.notes).toEqual([])
   cap.restore()
 })

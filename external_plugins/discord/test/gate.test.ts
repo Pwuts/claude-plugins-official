@@ -8,14 +8,14 @@ client.user = { id: BOT_ID, username: 'claude' } as any
 const CHANNEL = '200000000000000001'
 const ALERTS = '210000000000000002'
 const SENTRY = '700000000000000001'
-const REINIER = '244903587505897472'
+const OWNER = '510000000000000001'
 
 const tick = () => new Promise(r => setTimeout(r, 5))
 
 beforeEach(() => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: {
       [CHANNEL]: { requireMention: false, allowFrom: [] },
       [ALERTS]: { requireMention: false, allowFrom: [], allowBots: true },
@@ -30,14 +30,14 @@ test('a bot post in an ordinary opted-in channel is dropped', async () => {
 })
 
 test('a bot post in an allowBots channel is delivered', async () => {
-  const msg = mkMsg({ channel: mkChannel({ id: ALERTS, name: 'on-call-alerts' }), authorId: SENTRY, bot: true })
+  const msg = mkMsg({ channel: mkChannel({ id: ALERTS, name: 'alerts' }), authorId: SENTRY, bot: true })
   expect((await gate(msg)).action).toBe('deliver')
 })
 
 test('allowBots still honours the channel allowFrom list', async () => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [ALERTS]: { requireMention: false, allowFrom: [SENTRY], allowBots: true } },
   })
   const other = mkMsg({ channel: mkChannel({ id: ALERTS }), authorId: '700000000000000009', bot: true })
@@ -49,7 +49,7 @@ test('allowBots still honours the channel allowFrom list', async () => {
 test('allowBots does not bypass requireMention', async () => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [ALERTS]: { requireMention: true, allowFrom: [], allowBots: true } },
   })
   const msg = mkMsg({ channel: mkChannel({ id: ALERTS }), authorId: SENTRY, bot: true })
@@ -57,16 +57,16 @@ test('allowBots does not bypass requireMention', async () => {
 })
 
 test('a bot DM is dropped even if its id is allowlisted', async () => {
-  writeAccess({ dmPolicy: 'allowlist', allowFrom: [REINIER, SENTRY], groups: {} })
+  writeAccess({ dmPolicy: 'allowlist', allowFrom: [OWNER, SENTRY], groups: {} })
   const dm = mkChannel({ id: '600000000000000001', type: ChannelType.DM })
   expect((await gate(mkMsg({ channel: dm, authorId: SENTRY, bot: true }))).action).toBe('drop')
-  expect((await gate(mkMsg({ channel: dm, authorId: REINIER }))).action).toBe('deliver')
+  expect((await gate(mkMsg({ channel: dm, authorId: OWNER }))).action).toBe('deliver')
 })
 
 test('a bot post is delivered without a typing indicator or ack reaction', async () => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: {
       [CHANNEL]: { requireMention: false, allowFrom: [] },
       [ALERTS]: { requireMention: false, allowFrom: [], allowBots: true },
@@ -79,7 +79,7 @@ test('a bot post is delivered without a typing indicator or ack reaction', async
   expect(alert.reactions).toEqual([])
   expect(cap.notes.at(-1).params.meta.author_is_bot).toBe('true')
 
-  const human = mkMsg({ authorId: REINIER, username: 'Pwuts' })
+  const human = mkMsg({ authorId: OWNER, username: 'owner' })
   await handleInbound(human)
   expect(human.reactions).toEqual(['👀'])
   expect(cap.notes.at(-1).params.meta.author_is_bot).toBeUndefined()
@@ -95,7 +95,7 @@ test('the bot never processes its own messages', async () => {
   await tick()
   expect(cap.notes).toEqual([])
 
-  client.emit('messageCreate', mkMsg({ authorId: REINIER, username: 'Pwuts' }) as any)
+  client.emit('messageCreate', mkMsg({ authorId: OWNER, username: 'owner' }) as any)
   await tick()
   expect(cap.notes.length).toBe(1)
   cap.restore()
@@ -106,7 +106,7 @@ test('a permission reply is only acted on from the DM allowlist', async () => {
   await handleInbound(mkMsg({ authorId: '800000000000000001', username: 'stranger', content: 'y abcde' }))
   expect(cap.notes.at(-1).method).toBe('notifications/claude/channel')
 
-  await handleInbound(mkMsg({ authorId: REINIER, username: 'Pwuts', content: 'y abcde' }))
+  await handleInbound(mkMsg({ authorId: OWNER, username: 'owner', content: 'y abcde' }))
   expect(cap.notes.at(-1).method).toBe('notifications/claude/channel/permission')
   expect(cap.notes.at(-1).params).toEqual({ request_id: 'abcde', behavior: 'allow' })
   cap.restore()
@@ -117,7 +117,7 @@ test('an access.json written before any of this behaves exactly as it did', asyn
   // suppressEmbeds. Missing keys must read as the old behaviour.
   writeAccess({
     dmPolicy: 'pairing',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [CHANNEL]: { requireMention: true, allowFrom: [] } },
     pending: {},
     mentionPatterns: ['^hey claude\\b'],
@@ -126,15 +126,15 @@ test('an access.json written before any of this behaves exactly as it did', asyn
     textChunkLimit: 2000,
     chunkMode: 'newline',
   })
-  const mention = mkMsg({ authorId: REINIER, mentionsBot: true })
+  const mention = mkMsg({ authorId: OWNER, mentionsBot: true })
   expect((await gate(mention)).action).toBe('deliver')
-  expect((await gate(mkMsg({ authorId: REINIER, content: 'unrelated chatter' }))).action).toBe('drop')
-  expect((await gate(mkMsg({ authorId: REINIER, content: 'hey claude ping' }))).action).toBe('deliver')
+  expect((await gate(mkMsg({ authorId: OWNER, content: 'unrelated chatter' }))).action).toBe('drop')
+  expect((await gate(mkMsg({ authorId: OWNER, content: 'hey claude ping' }))).action).toBe('deliver')
   expect((await gate(mkMsg({ authorId: SENTRY, bot: true, mentionsBot: true }))).action).toBe('drop')
 
   client.channels.fetch = (async (id: string) => (id === CHANNEL ? mkChannel({ id: CHANNEL }) : null)) as any
   const cap = captureNotifications(mcp)
-  await handleReaction({ emoji: { name: '👍' }, message: { id: '1', channelId: CHANNEL, author: null, fetch: async () => ({ author: { id: BOT_ID } }) } } as any, { id: REINIER, username: 'Pwuts', bot: false } as any)
+  await handleReaction({ emoji: { name: '👍' }, message: { id: '1', channelId: CHANNEL, author: null, fetch: async () => ({ author: { id: BOT_ID } }) } } as any, { id: OWNER, username: 'owner', bot: false } as any)
   expect(cap.notes).toEqual([])
   cap.restore()
 })

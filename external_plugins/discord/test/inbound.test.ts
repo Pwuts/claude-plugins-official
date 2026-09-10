@@ -6,17 +6,17 @@ import { client, defaultAccess, inboundMeta } from '../server'
 client.user = { id: BOT_ID, username: 'claude' } as any
 
 const CHANNEL = '200000000000000001'
-const TORAN = '246045816865816577'
-const REINIER = '244903587505897472'
+const TEAMMATE = '520000000000000002'
+const OWNER = '510000000000000001'
 
 beforeEach(() => {
-  writeAccess({ dmPolicy: 'allowlist', allowFrom: [REINIER], groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } } })
+  writeAccess({ dmPolicy: 'allowlist', allowFrom: [OWNER], groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } } })
 })
 afterAll(cleanup)
 
 test('a plain channel message carries the channel name and no reply/mention signals', async () => {
-  const meta = await inboundMeta(mkMsg({ authorId: TORAN, username: 'torantula' }), [], defaultAccess())
-  expect(meta.channel_name).toBe('eng-general')
+  const meta = await inboundMeta(mkMsg({ authorId: TEAMMATE, username: 'teammate' }), [], defaultAccess())
+  expect(meta.channel_name).toBe('general')
   expect(meta.mentions_bot).toBe('false')
   expect(meta.reply_to).toBeUndefined()
   expect(meta.reply_to_user_id).toBeUndefined()
@@ -25,36 +25,36 @@ test('a plain channel message carries the channel name and no reply/mention sign
 })
 
 test('a reply to another human reports that human, not the bot', async () => {
-  const target = mkMsg({ id: '111', authorId: TORAN })
+  const target = mkMsg({ id: '111', authorId: TEAMMATE })
   const channel = mkChannel({ messages: { '111': target } })
   const msg = mkMsg({
-    authorId: REINIER,
+    authorId: OWNER,
     channel,
     reference: { messageId: '111' },
-    mentions: [TORAN],
+    mentions: [TEAMMATE],
     content: 'can you look at this?',
   })
   const meta = await inboundMeta(msg, [], defaultAccess())
   expect(meta.reply_to).toBe('111')
-  expect(meta.reply_to_user_id).toBe(TORAN)
-  expect(meta.mentions).toBe(TORAN)
+  expect(meta.reply_to_user_id).toBe(TEAMMATE)
+  expect(meta.mentions).toBe(TEAMMATE)
   expect(meta.mentions_bot).toBe('false')
 })
 
 test('a reply to the bot is addressed to the bot even without an @mention', async () => {
   const mine = mkMsg({ id: '222', authorId: BOT_ID, username: 'claude', bot: true })
   const channel = mkChannel({ messages: { '222': mine } })
-  const msg = mkMsg({ authorId: REINIER, channel, reference: { messageId: '222' } })
+  const msg = mkMsg({ authorId: OWNER, channel, reference: { messageId: '222' } })
   const meta = await inboundMeta(msg, [], defaultAccess())
   expect(meta.reply_to_user_id).toBe(BOT_ID)
   expect(meta.mentions_bot).toBe('true')
 })
 
 test('an @mention of the bot sets mentions_bot and lists every mentioned id', async () => {
-  const msg = mkMsg({ authorId: TORAN, mentionsBot: true, mentions: [REINIER] })
+  const msg = mkMsg({ authorId: TEAMMATE, mentionsBot: true, mentions: [OWNER] })
   const meta = await inboundMeta(msg, [], defaultAccess())
   expect(meta.mentions_bot).toBe('true')
-  expect(meta.mentions!.split(',').sort()).toEqual([REINIER, BOT_ID].sort())
+  expect(meta.mentions!.split(',').sort()).toEqual([OWNER, BOT_ID].sort())
 })
 
 test('a thread message reports thread and parent_id', async () => {
@@ -73,14 +73,14 @@ test('a thread message reports thread and parent_id', async () => {
 test('a DM is always addressed to the bot', async () => {
   const channel = mkChannel({ id: '600000000000000001', type: ChannelType.DM, name: undefined })
   delete (channel as any).name
-  const meta = await inboundMeta(mkMsg({ channel, authorId: REINIER }), [], defaultAccess())
+  const meta = await inboundMeta(mkMsg({ channel, authorId: OWNER }), [], defaultAccess())
   expect(meta.mentions_bot).toBe('true')
   expect(meta.channel_name).toBeUndefined()
 })
 
 test('a mention pattern counts as a mention', async () => {
   const access = { ...defaultAccess(), mentionPatterns: ['^hey claude\\b'] }
-  const msg = mkMsg({ authorId: TORAN, content: 'hey claude can you check CI' })
+  const msg = mkMsg({ authorId: TEAMMATE, content: 'hey claude can you check CI' })
   expect((await inboundMeta(msg, [], access)).mentions_bot).toBe('true')
 })
 

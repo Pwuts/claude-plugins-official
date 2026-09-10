@@ -4,7 +4,7 @@ import { TOOLS, client } from '../server'
 
 test('importing the server does not open a gateway connection', () => {
   expect(client.isReady()).toBe(false)
-  expect(client.user).toBeNull()
+  expect(client.token).toBeNull()
 })
 
 test('every tool declares a name, a description and an object schema', () => {

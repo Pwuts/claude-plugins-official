@@ -6,7 +6,7 @@ import { callTool, client, gate } from '../server'
 client.user = { id: BOT_ID, username: 'claude' } as any
 
 const CHANNEL = '200000000000000001'
-const REINIER = '244903587505897472'
+const OWNER = '510000000000000001'
 
 function serveChannels(...chans: any[]): void {
   const byId = new Map(chans.map(c => [c.id, c]))
@@ -20,7 +20,7 @@ function text(res: any): string {
 beforeEach(() => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } },
   })
 })
@@ -67,7 +67,7 @@ test('create_thread refuses a thread as its parent', async () => {
 
 test('a message in a new thread delivers on the parent channel opt-in', async () => {
   const thread = mkChannel({ id: '300000000000000009', type: ChannelType.PublicThread, parentId: CHANNEL })
-  const result = await gate(mkMsg({ channel: thread, authorId: REINIER }))
+  const result = await gate(mkMsg({ channel: thread, authorId: OWNER }))
   expect(result.action).toBe('deliver')
 })
 
@@ -87,7 +87,7 @@ test('delete_message removes a message the bot sent', async () => {
 })
 
 test('delete_message refuses someone else\'s message', async () => {
-  const theirs = mkMsg({ id: '889', authorId: REINIER, username: 'Pwuts' })
+  const theirs = mkMsg({ id: '889', authorId: OWNER, username: 'owner' })
   serveChannels(mkChannel({ id: CHANNEL, messages: { '889': theirs } }))
   const res = await callTool('delete_message', { chat_id: CHANNEL, message_id: '889' })
   expect(res.isError).toBe(true)
@@ -108,7 +108,7 @@ test('reply strips link previews by default and on request keeps them', async ()
 test('suppressEmbeds in access.json flips the default, and the parameter still wins', async () => {
   writeAccess({
     dmPolicy: 'allowlist',
-    allowFrom: [REINIER],
+    allowFrom: [OWNER],
     groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } },
     suppressEmbeds: false,
   })

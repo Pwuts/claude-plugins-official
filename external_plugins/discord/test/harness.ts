@@ -50,7 +50,7 @@ export function mkChannel(o: {
   const ch: any = {
     id: o.id ?? '200000000000000001',
     type,
-    name: o.name ?? 'eng-general',
+    name: o.name ?? 'general',
     parentId: o.parentId ?? null,
     sent: [] as any[],
     isThread: () => isThread,
