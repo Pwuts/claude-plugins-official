@@ -816,12 +816,14 @@ export async function handleInbound(msg: Message): Promise<void> {
     dmChannelUsers.set(chat_id, msg.author.id)
   }
 
+  const access = result.access
+
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
-  // relaying as chat. The sender is already gate()-approved at this point
-  // (non-allowlisted senders were dropped above), so we trust the reply.
+  // relaying as chat. Requests only ever go to allowFrom DMs, so the reply
+  // has to come from the same list — the same rule the button handler uses.
   const permMatch = PERMISSION_REPLY_RE.exec(msg.content)
-  if (permMatch) {
+  if (permMatch && access.allowFrom.includes(msg.author.id)) {
     void mcp.notification({
       method: 'notifications/claude/channel/permission',
       params: {
@@ -840,7 +842,6 @@ export async function handleInbound(msg: Message): Promise<void> {
   }
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
-  const access = result.access
   if (access.ackReaction) {
     void msg.react(access.ackReaction).catch(() => {})
   }
