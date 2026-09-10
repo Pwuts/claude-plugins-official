@@ -58,6 +58,18 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+### Bots and webhooks
+
+Messages from other bots and from webhooks are dropped everywhere by default: an alert feed talking to an assistant that answers is a loop waiting to happen. Pass `--allow-bots` to deliver them in one channel — the Sentry, deploy or CI feed you actually want to see.
+
+```
+/discord:access group add 846209781206941736 --no-mention --allow-bots
+```
+
+`--allow-bots` is orthogonal to `requireMention`: an alert bot never @mentions anyone, so an alert channel wants both flags. `--allow` applies to bots too, so `--allow <sentry-bot-id> --allow-bots` delivers Sentry and nothing else. The bot's own messages are never delivered, and DMs from bots are always dropped.
+
+Bot-authored messages arrive with `author_is_bot="true"` and get no typing indicator and no ack reaction — those are for a human waiting on an answer.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -99,7 +111,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access allow 184695080709324800` | Add a user snowflake directly. |
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
-| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`. |
+| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--allow-bots`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 
@@ -121,7 +133,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // true: respond only to @mentions and replies.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // Deliver other bots' and webhooks' messages in this channel. Absent = false.
+      "allowBots": false
     }
   },
 

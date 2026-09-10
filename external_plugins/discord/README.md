@@ -105,6 +105,7 @@ the bot is not addressed to the assistant.
 | `mentions` | Comma-separated snowflakes of everyone mentioned. |
 | `reply_to` / `reply_to_user_id` | Set when the message is a reply: the message it replies to, and that message's author. Absent `reply_to_user_id` means the parent was deleted or unreadable. |
 | `thread` / `parent_id` | `thread="true"` inside a thread, with the parent channel's ID. |
+| `author_is_bot` | `true` when another bot or a webhook posted it — only ever present in a channel opted in with `--allow-bots`. |
 | `attachment_count` / `attachments` | Present when the message has attachments; see below. |
 
 ## Tools exposed to the assistant

@@ -35,7 +35,7 @@ Arguments passed: `$ARGUMENTS`
   "dmPolicy": "pairing",
   "allowFrom": ["<senderId>", ...],
   "groups": {
-    "<channelId>": { "requireMention": true, "allowFrom": [] }
+    "<channelId>": { "requireMention": true, "allowFrom": [], "allowBots": false }
   },
   "pending": {
     "<6-char-code>": {
@@ -95,12 +95,17 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 1. Validate `<mode>` is one of `pairing`, `allowlist`, `disabled`.
 2. Read (create default if missing), set `dmPolicy`, write.
 
-### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`)
+### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`, `--allow-bots`)
 
 1. Read (create default if missing).
 2. Set `groups[<channelId>] = { requireMention: !hasFlag("--no-mention"),
-   allowFrom: parsedAllowList }`.
+   allowFrom: parsedAllowList, allowBots: hasFlag("--allow-bots") }`.
 3. Write.
+
+`--allow-bots` delivers messages from other bots and webhooks in that channel
+— alert feeds (Sentry, deploy notices). It does not bypass `requireMention`,
+so an alert channel wants `--no-mention --allow-bots`. The bot's own messages
+never deliver.
 
 ### `group rm <channelId>`
 
