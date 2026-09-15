@@ -57,6 +57,17 @@ test('batching off delivers every message on its own, as before', async () => {
   expect(notes[0].params.meta.batch).toBeUndefined()
 })
 
+test('batchQuietMs 0 is off even with a mention window set', async () => {
+  writeAccess({
+    dmPolicy: 'allowlist',
+    allowFrom: [OWNER],
+    groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } },
+    batchMentionQuietMs: 5000,
+  })
+  await handleInbound(msg({ id: '401', content: 'claude?', mentionsBot: true }))
+  expect(notes.length).toBe(1)
+})
+
 test('a quiet chat delivers nothing until the quiet window has passed', async () => {
   await handleInbound(msg({ id: '401', content: 'one' }))
   jest.advanceTimersByTime(QUIET - 1)
