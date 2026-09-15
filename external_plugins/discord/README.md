@@ -14,6 +14,7 @@ This is a fork of the [official Discord plugin](https://github.com/anthropics/cl
 - Get told a message no longer exists, instead of Discord's bare "Unknown Message".
 - Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
 - Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
+- Hold a busy chat's messages and deliver the burst as one event with `batchQuietMs`, so a room full of people talking to each other doesn't cost a turn per line. A message aimed at the bot skips the wait.
 - Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.
 - Answer a permission prompt only from an allowlisted DM, not from anywhere the bot can read.
 - Run one connection per bot: a second instance on the same state directory refuses to start instead of answering every message twice.
@@ -134,6 +135,7 @@ the bot is not addressed to the assistant.
 | `event` / `reaction` / `on_own_message` | Present on a reaction event: `event="reaction"`, the emoji, and whether it landed on a message the bot sent. Opt in per channel with `--reactions`. |
 | `author_is_bot` | `true` when another bot or a webhook posted it — only ever present in a channel opted in with `--allow-bots`. |
 | `attachment_count` / `attachments` | Present when the message has attachments; see below. |
+| `batch` / `message_count` | Present when several messages were held and delivered together, each in its own `<message>` tag inside. Off unless `batchQuietMs` is set — see [ACCESS.md](./ACCESS.md#batching-inbound-messages). |
 
 ## Tools exposed to the assistant
 
