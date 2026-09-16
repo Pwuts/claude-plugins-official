@@ -4,6 +4,25 @@ Connect a Discord bot to your Claude Code with an MCP server.
 
 When the bot receives a message, the MCP server forwards it to Claude and provides tools to reply, react, and edit messages.
 
+## This fork
+
+This is a fork of the [official Discord plugin](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord), maintained at [Pwuts/claude-plugins-official](https://github.com/Pwuts/claude-plugins-official) on top of upstream `main`. It adds what running a bot daily across DMs, shared channels and threads turned out to need:
+
+- Tell a message aimed at the assistant from one aimed at someone else — inbound messages carry the mentions, the reply target and its author, the channel name, and thread ids.
+- Start a thread with `create_thread`, and take back a message the bot sent with `delete_message`.
+- Page further back through history with `before`, and find existing threads with `list_threads`.
+- Get told a message no longer exists, instead of Discord's bare "Unknown Message".
+- Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
+- Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
+- Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.
+- Answer a permission prompt only from an allowlisted DM, not from anywhere the bot can read.
+- Run one connection per bot: a second instance on the same state directory refuses to start instead of answering every message twice.
+- Change any of it with a test suite behind you — `bun test` covers the message gate and the tools.
+
+The rest of this README describes the fork, so the tables below already include these.
+
+Installing it differs from upstream in one step: register this directory as a local marketplace of your own and install from that, then launch with `--dangerously-load-development-channels plugin:discord@<your-marketplace>` in place of `--channels`, since a locally added marketplace is not on the `--channels` allowlist.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) — the MCP server runs on Bun. Install with `curl -fsSL https://bun.sh/install | bash`.
@@ -59,6 +78,13 @@ Writes `DISCORD_BOT_TOKEN=...` to `~/.claude/channels/discord/.env`. You can als
 
 > To run multiple bots on one machine (different tokens, separate allowlists), point `DISCORD_STATE_DIR` at a different directory per instance.
 
+> **One connection per bot.** The server locks its state directory at startup.
+> A second session started against the same directory names the holder's pid on
+> stderr and exits without connecting — Discord delivers every event to every
+> connection, so two of them answer the same message twice. A lock left behind
+> by a crashed process is reclaimed on the next start; `instance.lock` only
+> needs deleting by hand if its pid has been reused by something else.
+
 **6. Relaunch with the channel flag.**
 
 The server won't connect without this — exit your session and start a new one:
@@ -87,14 +113,39 @@ See **[ACCESS.md](./ACCESS.md)** for DM policies, guild channels, mention detect
 
 Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mode, right-click → Copy ID). Default policy is `pairing`. Guild channels are opt-in per channel ID.
 
+## Inbound messages
+
+Each message reaches the assistant as a one-line `<channel>` tag. The
+attributes say who is talking and, crucially, *who they are talking to* — in a
+channel with more than one human, a reply to someone else with no mention of
+the bot is not addressed to the assistant.
+
+| Attribute | Meaning |
+| --- | --- |
+| `chat_id` | Channel (or thread) ID. Pass it back to `reply`. |
+| `message_id` | This message's ID. Use with `react`, `edit_message`, `create_thread`. |
+| `user` / `user_id` | Author's display name and snowflake. The snowflake is the identity; names are mutable. |
+| `ts` | ISO timestamp. |
+| `channel_name` | Channel name, when the channel has one (DMs don't). |
+| `mentions_bot` | `true` when the message @mentions the bot, replies to one of its messages, matches a `mentionPatterns` regex, or is a DM. |
+| `mentions` | Comma-separated snowflakes of everyone mentioned. |
+| `reply_to` / `reply_to_user_id` | Set when the message is a reply: the message it replies to, and that message's author. Absent `reply_to_user_id` means the parent was deleted or unreadable. |
+| `thread` / `parent_id` | `thread="true"` inside a thread, with the parent channel's ID. |
+| `event` / `reaction` / `on_own_message` | Present on a reaction event: `event="reaction"`, the emoji, and whether it landed on a message the bot sent. Opt in per channel with `--reactions`. |
+| `author_is_bot` | `true` when another bot or a webhook posted it — only ever present in a channel opted in with `--allow-bots`. |
+| `attachment_count` / `attachments` | Present when the message has attachments; see below. |
+
 ## Tools exposed to the assistant
 
 | Tool | Purpose |
 | --- | --- |
-| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Returns the sent message ID(s). |
+| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Link preview cards are suppressed unless `suppress_embeds: false` — a message with ten links otherwise takes over the channel. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to any message by ID. Unicode emoji work directly; custom emoji need `<:name:id>` form. |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
-| `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call. Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
+| `create_thread` | Start a thread on a channel, optionally branching off a message (`message_id`). Takes `name` and `auto_archive_duration` (60 / 1440 / 4320 / 10080 minutes, default 4320). Returns the thread ID — pass it as `chat_id` to reply inside the thread. Threads inherit their parent channel's opt-in, so a new one delivers straight away. |
+| `delete_message` | Delete a message the bot sent. Anyone else's is refused — even in a channel where Discord's Manage Messages permission would allow it. |
+| `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call; page further back with `before` (the id of the oldest line returned). Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
+| `list_threads` | List a channel's threads, active first then recently archived, with their ids. |
 | `download_attachment` | Download all attachments from a specific message by ID to `~/.claude/channels/discord/inbox/`. Returns file paths + metadata. Use when `fetch_messages` shows a message has attachments. |
 
 Inbound messages trigger a typing indicator automatically — Discord shows
