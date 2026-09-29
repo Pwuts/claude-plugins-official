@@ -12,6 +12,7 @@ This is a fork of the [official Discord plugin](https://github.com/anthropics/cl
 - Start a thread with `create_thread`, and take back a message the bot sent with `delete_message`.
 - Page further back through history with `before`, and find existing threads with `list_threads`.
 - Get told a message no longer exists, instead of Discord's bare "Unknown Message".
+- Tell someone who @mentions the bot in a channel it isn't opted into why nothing happens, instead of leaving them in silence.
 - Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
 - Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
 - Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.

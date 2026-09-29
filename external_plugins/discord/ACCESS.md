@@ -58,6 +58,8 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+Someone who @mentions the bot, or replies to it, in a channel that isn't opted in gets a DM saying the bot can't see that channel, with the `group add` command for it. When their DMs are closed, the bot replies in the channel instead and deletes the reply after 30 seconds. Each person hears it at most once per channel per hour, and the message itself is still dropped.
+
 ### Bots and webhooks
 
 Messages from other bots and from webhooks are dropped everywhere by default: an alert feed talking to an assistant that answers is a loop waiting to happen. Pass `--allow-bots` to deliver them in one channel — the Sentry, deploy or CI feed you actually want to see.

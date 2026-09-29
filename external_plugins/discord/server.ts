@@ -231,7 +231,7 @@ function pruneExpired(a: Access): boolean {
 
 type GateResult =
   | { action: 'deliver'; access: Access }
-  | { action: 'drop' }
+  | { action: 'drop'; unlisted?: string }
   | { action: 'pair'; code: string; isResend: boolean }
 
 // Track message IDs we recently sent, so reply-to-bot in guild channels
@@ -300,7 +300,12 @@ export async function gate(msg: Message): Promise<GateResult> {
     ? msg.channel.parentId ?? msg.channelId
     : msg.channelId
   const policy = access.groups[channelId]
-  if (!policy) return { action: 'drop' }
+  if (!policy) {
+    // Still a drop; `unlisted` only tells handleInbound the sender deserves to hear why.
+    const addressed =
+      !msg.author.bot && (await isMentioned(msg, access.mentionPatterns, { ignoreEveryone: true }))
+    return addressed ? { action: 'drop', unlisted: channelId } : { action: 'drop' }
+  }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
   if (msg.author.bot && !policy.allowBots) return { action: 'drop' }
@@ -313,8 +318,13 @@ export async function gate(msg: Message): Promise<GateResult> {
   return { action: 'deliver', access }
 }
 
-export async function isMentioned(msg: Message, extraPatterns?: string[]): Promise<boolean> {
-  if (client.user && msg.mentions.has(client.user)) return true
+export async function isMentioned(
+  msg: Message,
+  extraPatterns?: string[],
+  { ignoreEveryone = false }: { ignoreEveryone?: boolean } = {},
+): Promise<boolean> {
+  // discord.js counts @everyone and @here as mentioning every member, the bot included.
+  if (client.user && msg.mentions.has(client.user, { ignoreEveryone })) return true
 
   // Reply to one of our messages counts as an implicit mention.
   const refId = msg.reference?.messageId
@@ -993,7 +1003,10 @@ client.on('messageCreate', msg => {
 export async function handleInbound(msg: Message): Promise<void> {
   const result = await gate(msg)
 
-  if (result.action === 'drop') return
+  if (result.action === 'drop') {
+    if (result.unlisted) await noticeUnlisted(msg, result.unlisted)
+    return
+  }
 
   if (result.action === 'pair') {
     const lead = result.isResend ? 'Still pending' : 'Pairing required'
@@ -1066,6 +1079,42 @@ export async function handleInbound(msg: Message): Promise<void> {
   }).catch(err => {
     process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
   })
+}
+
+const UNLISTED_NOTICE_EVERY_MS = 60 * 60 * 1000
+const UNLISTED_FALLBACK_TTL_MS = 30 * 1000
+const unlistedNoticedAt = new Map<string, number>()
+
+// Discord shows a message to one user only as an interaction reply, never in
+// answer to a plain message — so the notice is a DM, and when DMs are closed a
+// reply that deletes itself.
+async function noticeUnlisted(msg: Message, channelId: string): Promise<void> {
+  const now = Date.now()
+  for (const [key, at] of unlistedNoticedAt) {
+    if (now - at >= UNLISTED_NOTICE_EVERY_MS) unlistedNoticedAt.delete(key)
+  }
+  const key = `${msg.author.id}:${channelId}`
+  if (unlistedNoticedAt.has(key)) return
+  unlistedNoticedAt.set(key, now)
+
+  const text =
+    `I don't have access to <#${channelId}>, so your message there never reached me. ` +
+    `Post in a channel I can read, or ask whoever runs me to add this one with \`/discord:access group add ${channelId}\`.`
+  try {
+    await msg.author.send(text)
+    return
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== RESTJSONErrorCodes.CannotSendMessagesToThisUser) {
+      process.stderr.write(`discord channel: failed to DM unlisted-channel notice: ${err}\n`)
+      return
+    }
+  }
+  try {
+    const sent = await msg.reply({ content: text, allowedMentions: { repliedUser: false } })
+    setTimeout(() => void sent.delete().catch(() => {}), UNLISTED_FALLBACK_TTL_MS).unref?.()
+  } catch (err) {
+    process.stderr.write(`discord channel: failed to post unlisted-channel notice: ${err}\n`)
+  }
 }
 
 // Addressing signals. Without reply_to and mentions_bot, a reply to another
