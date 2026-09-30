@@ -727,7 +727,8 @@ export async function callTool(name: string, args: Record<string, unknown>) {
           sentIds.length === 1
             ? `sent (id: ${sentIds[0]})`
             : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
-        return { content: [{ type: 'text', text: result }] }
+        const warnings = midLineCutWarnings(text, chunks, sentIds)
+        return { content: [{ type: 'text', text: [result, ...warnings].join('\n') }] }
       }
       case 'create_thread': {
         const channel_id = args.channel_id as string
@@ -840,6 +841,46 @@ export async function callTool(name: string, args: Record<string, unknown>) {
       isError: true,
     }
   }
+}
+
+const CUT_EXCERPT_CHARS = 24
+const RENDER_BREAKING_SPANS: [string, RegExp][] = [
+  ['a Markdown link', /\[[^\]\n]*\]\((?:<[^>\n]*>|[^)\n]*)\)/g],
+  ['an inline code span', /(`+)[^`\n]+?\1/g],
+]
+
+// Discord renders each part of a split reply on its own, so a cut inside a line
+// shows as two broken halves. Only the model can re-flow the text, so tell it where.
+function midLineCutWarnings(text: string, parts: string[], ids: string[]): string[] {
+  const warnings: string[] = []
+  let start = 0
+  for (let i = 0; i < parts.length - 1; i++) {
+    const cut = start + parts[i]!.length
+    start = text.indexOf(parts[i + 1]!, cut)
+    if (text[cut - 1] === '\n' || text[cut] === '\n') continue
+
+    const lineStart = text.lastIndexOf('\n', cut - 1) + 1
+    const nextBreak = text.indexOf('\n', cut)
+    const lineEnd = nextBreak === -1 ? text.length : nextBreak
+    const before = text.slice(Math.max(lineStart, cut - CUT_EXCERPT_CHARS), cut)
+    const after = text.slice(cut, Math.min(lineEnd, cut + CUT_EXCERPT_CHARS))
+    const span = spanAround(text.slice(lineStart, lineEnd), cut - lineStart)
+    warnings.push(
+      `warning: part ${i + 1} of ${parts.length} ends mid-line${span ? `, inside ${span}` : ''}: ` +
+        `"…${before}" ✂ "${after}…". Repair with edit_message so the whole line sits in one part — ` +
+        `part ${i + 1} is id ${ids[i]}, part ${i + 2} is id ${ids[i + 1]}, and each holds at most ${MAX_CHUNK_LIMIT} characters.`,
+    )
+  }
+  return warnings
+}
+
+function spanAround(line: string, at: number): string | null {
+  for (const [kind, re] of RENDER_BREAKING_SPANS) {
+    for (const m of line.matchAll(re)) {
+      if (m.index < at && at < m.index + m[0].length) return kind
+    }
+  }
+  return null
 }
 
 // One gateway connection per token: a second one gets its own copy of every

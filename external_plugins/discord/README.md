@@ -15,6 +15,7 @@ This is a fork of the [official Discord plugin](https://github.com/anthropics/cl
 - Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
 - Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
 - Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.
+- Get warned when a long reply was split in the middle of a line, which renders a link or code span cut in two as broken text.
 - Answer a permission prompt only from an allowlisted DM, not from anywhere the bot can read.
 - Run one connection per bot: a second instance on the same state directory refuses to start instead of answering every message twice.
 - Change any of it with a test suite behind you — `bun test` covers the message gate and the tools.
@@ -139,7 +140,7 @@ the bot is not addressed to the assistant.
 
 | Tool | Purpose |
 | --- | --- |
-| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Link preview cards are suppressed unless `suppress_embeds: false` — a message with ten links otherwise takes over the channel. Returns the sent message ID(s). |
+| `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Link preview cards are suppressed unless `suppress_embeds: false` — a message with ten links otherwise takes over the channel. Returns the sent message ID(s), with a warning for any part that ends mid-line — and whether the cut split a Markdown link or code span — so the text can be repaired with `edit_message`. |
 | `react` | Add an emoji reaction to any message by ID. Unicode emoji work directly; custom emoji need `<:name:id>` form. |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
 | `create_thread` | Start a thread on a channel, optionally branching off a message (`message_id`). Takes `name` and `auto_archive_duration` (60 / 1440 / 4320 / 10080 minutes, default 4320). Returns the thread ID — pass it as `chat_id` to reply inside the thread. Threads inherit their parent channel's opt-in, so a new one delivers straight away. |
