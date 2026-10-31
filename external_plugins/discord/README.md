@@ -135,6 +135,7 @@ the bot is not addressed to the assistant.
 | `thread` / `parent_id` | `thread="true"` inside a thread, with the parent channel's ID. |
 | `event` / `reaction` / `on_own_message` | Present on a reaction event: `event="reaction"`, the emoji, and whether it landed on a message the bot sent. Opt in per channel with `--reactions`. |
 | `author_is_bot` | `true` when another bot or a webhook posted it — only ever present in a channel opted in with `--allow-bots`. |
+| `system` | Present when Discord posted the message itself, naming its type in snake case (`channel_name_change`, `channel_pinned_message`, `thread_created`, …). The author is whoever triggered it, and the text is kept: a rename's text is the new name. |
 | `attachment_count` / `attachments` | Present when the message has attachments; see below. |
 | `batch` / `message_count` | Present when several messages were held and delivered together, each in its own `<message>` tag inside. Off unless `batchQuietMs` is set — see [ACCESS.md](./ACCESS.md#batching-inbound-messages). |
 
@@ -147,7 +148,7 @@ the bot is not addressed to the assistant.
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
 | `create_thread` | Start a thread on a channel, optionally branching off a message (`message_id`). Takes `name` and `auto_archive_duration` (60 / 1440 / 4320 / 10080 minutes, default 4320). Returns the thread ID — pass it as `chat_id` to reply inside the thread. Threads inherit their parent channel's opt-in, so a new one delivers straight away. |
 | `delete_message` | Delete a message the bot sent. Anyone else's is refused — even in a channel where Discord's Manage Messages permission would allow it. |
-| `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call; page further back with `before` (the id of the oldest line returned). Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
+| `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call; page further back with `before` (the id of the oldest line returned). Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`, and Discord's own messages `system=<type>`. Discord's search API isn't exposed to bots, so this is the only lookback. |
 | `list_threads` | List a channel's threads, active first then recently archived, with their ids. |
 | `download_attachment` | Download all attachments from a specific message by ID to `~/.claude/channels/discord/inbox/`. Returns file paths + metadata. Use when `fetch_messages` shows a message has attachments. |
 

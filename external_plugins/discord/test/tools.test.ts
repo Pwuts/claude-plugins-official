@@ -1,5 +1,5 @@
 import { expect, test, beforeEach, afterAll } from 'bun:test'
-import { ChannelType, MessageFlags } from 'discord.js'
+import { ChannelType, MessageFlags, MessageType } from 'discord.js'
 import { BOT_ID, cleanup, mkChannel, mkMsg, writeAccess } from './harness'
 import { callTool, client, gate } from '../server'
 
@@ -137,6 +137,15 @@ test('fetch_messages pages back with before', async () => {
 
   await callTool('fetch_messages', { channel: CHANNEL })
   expect(ch.messages.calls.at(-1)).toEqual({ limit: 20 })
+})
+
+test('fetch_messages marks a system message in the history', async () => {
+  const rename = mkMsg({ id: '6', type: MessageType.ChannelNameChange, content: 'release plan: notes' })
+  const ch = mkChannel({ id: CHANNEL, messages: { '5': mkMsg({ id: '5', content: 'hi' }), '6': rename } })
+  serveChannels(ch)
+  const rows = text(await callTool('fetch_messages', { channel: CHANNEL })).split('\n')
+  expect(rows.find(r => r.includes('(id: 6'))).toContain('release plan: notes  (id: 6 system=channel_name_change)')
+  expect(rows.find(r => r.includes('(id: 5'))).toEndWith('(id: 5)')
 })
 
 test('list_threads reports active and archived threads', async () => {

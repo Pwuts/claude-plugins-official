@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { ChannelType } from 'discord.js'
+import { ChannelType, Constants, MessageType } from 'discord.js'
 
 export const STATE_DIR = mkdtempSync(join(tmpdir(), 'discord-channel-test-'))
 process.env.DISCORD_STATE_DIR = STATE_DIR
@@ -36,6 +36,7 @@ type MsgOpts = {
   dmsClosed?: boolean
   attachments?: any[]
   reference_author?: string
+  type?: MessageType
 }
 
 export function mkChannel(o: {
@@ -102,8 +103,12 @@ export function mkMsg(o: MsgOpts = {}): any {
   const mentionIds = o.mentions ?? []
   const users = new Map(mentionIds.map(id => [id, { id, username: `u${id}` }]))
   if (o.mentionsBot) users.set(BOT_ID, { id: BOT_ID, username: 'claude' })
+  const type = o.type ?? MessageType.Default
   const msg: any = {
     id: o.id ?? '400000000000000001',
+    type,
+    // discord.js's own rule, so a test sees the flag a real Message carries.
+    system: !(Constants.NonSystemMessageTypes as MessageType[]).includes(type),
     content: o.content ?? 'hello',
     channelId: channel.id,
     channel,
