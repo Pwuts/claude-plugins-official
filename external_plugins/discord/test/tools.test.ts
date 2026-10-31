@@ -129,6 +129,51 @@ test('every chunk of a split reply gets the flag', async () => {
   expect(ch.sent.map((s: any) => s.flags)).toEqual([MessageFlags.SuppressEmbeds, MessageFlags.SuppressEmbeds])
 })
 
+test('a split reply warns about the part that ends mid-line, and not about one that ends on a line break', async () => {
+  splitAt(40)
+  // The code span sits after the cut, so the warning must not call the cut inside it.
+  const line = 'the second line runs on well past the forty character `limit` here'
+  const out = text(await callTool('reply', { chat_id: CHANNEL, text: 'x'.repeat(39) + '\n' + line }))
+  const [sent, ...warnings] = out.split('\n')
+  expect(sent).toStartWith('sent 3 parts')
+  expect(warnings.length).toBe(1)
+  expect(warnings[0]).toContain('part 2 of 3 ends mid-line: "…runs on well past the fo" ✂ "rty character `limit` he…"')
+  expect(warnings[0]).toContain('part 2 is id 900000000000000011, part 3 is id 900000000000000012')
+  expect(warnings[0]).not.toContain('inside')
+})
+
+test.each([
+  ['a Markdown link', 'see [fix the parser - #14308](<https://github.com/x/y/pull/14308>) now'],
+  ['an inline code span', 'run `bun test test/tools.test.ts --watch` to see it'],
+])('a cut inside %s says so', async (span, line) => {
+  splitAt(20)
+  const out = text(await callTool('reply', { chat_id: CHANNEL, text: line }))
+  expect(out).toMatch(new RegExp(`part 1 of \\d+ ends mid-line, inside ${span}:`))
+})
+
+test.each([
+  ['a reply that fits in one message', 'length', 'short reply'],
+  ['a newline-mode split on a line break', 'newline', 'first line of the reply is here\nsecond line of the reply is here'],
+] as const)('%s carries no warning', async (_, mode, body) => {
+  const ch = splitAt(40, mode)
+  const out = text(await callTool('reply', { chat_id: CHANNEL, text: body }))
+  expect(out).not.toContain('warning')
+  expect(ch.sent.length).toBe(body.includes('\n') ? 2 : 1)
+})
+
+function splitAt(textChunkLimit: number, chunkMode: 'length' | 'newline' = 'length'): any {
+  writeAccess({
+    dmPolicy: 'allowlist',
+    allowFrom: [OWNER],
+    groups: { [CHANNEL]: { requireMention: false, allowFrom: [] } },
+    textChunkLimit,
+    chunkMode,
+  })
+  const ch = mkChannel({ id: CHANNEL })
+  serveChannels(ch)
+  return ch
+}
+
 test('fetch_messages pages back with before', async () => {
   const ch = mkChannel({ id: CHANNEL, messages: { '5': mkMsg({ id: '5', content: 'older' }) } })
   serveChannels(ch)

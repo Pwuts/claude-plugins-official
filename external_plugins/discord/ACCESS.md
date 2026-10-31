@@ -109,7 +109,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 
 **`textChunkLimit`** sets the split threshold. Discord rejects messages over 2000 characters, which is the hard ceiling.
 
-**`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
+**`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries. `length` can cut a line in two, breaking a link that spans the cut; the reply tool then warns which part ended mid-line.
 
 **`suppressEmbeds`** (default `true`) strips Discord's link preview cards from outbound messages. A reply with ten PR links renders as ten preview boxes otherwise. The `reply` tool's `suppress_embeds` parameter overrides it per message.
 
