@@ -1,7 +1,7 @@
 import { expect, test, beforeEach, afterAll } from 'bun:test'
-import { ChannelType } from 'discord.js'
-import { BOT_ID, cleanup, mkChannel, mkMsg, writeAccess } from './harness'
-import { client, defaultAccess, inboundMeta } from '../server'
+import { ChannelType, MessageType } from 'discord.js'
+import { BOT_ID, captureNotifications, cleanup, mkChannel, mkMsg, writeAccess } from './harness'
+import { client, defaultAccess, handleInbound, inboundMeta, mcp } from '../server'
 
 client.user = { id: BOT_ID, username: 'claude' } as any
 
@@ -96,4 +96,37 @@ test('attachments still land in meta', async () => {
   const meta = await inboundMeta(mkMsg(), ['log.txt (text/plain, 4KB)'], defaultAccess())
   expect(meta.attachment_count).toBe('1')
   expect(meta.attachments).toBe('log.txt (text/plain, 4KB)')
+})
+
+test('a thread rename is delivered as a system event that keeps the new name', async () => {
+  const capture = captureNotifications(mcp)
+  try {
+    const thread = mkChannel({ id: '300000000000000002', type: ChannelType.PublicThread, parentId: CHANNEL })
+    await handleInbound(
+      mkMsg({ channel: thread, authorId: OWNER, type: MessageType.ChannelNameChange, content: 'release plan: rollout' }),
+    )
+    expect(capture.notes.length).toBe(1)
+    expect(capture.notes[0].params.content).toBe('release plan: rollout')
+    expect(capture.notes[0].params.meta.system).toBe('channel_name_change')
+  } finally {
+    capture.restore()
+  }
+})
+
+test('a pin of the bot\'s own message reads as addressed, and system says it is a pin notice', async () => {
+  const mine = mkMsg({ id: '333', authorId: BOT_ID, username: 'claude', bot: true })
+  const channel = mkChannel({ messages: { '333': mine } })
+  const pin = mkMsg({ channel, authorId: OWNER, type: MessageType.ChannelPinnedMessage, content: '', reference: { messageId: '333' } })
+  const meta = await inboundMeta(pin, [], defaultAccess())
+  expect(meta.mentions_bot).toBe('true')
+  expect(meta.system).toBe('channel_pinned_message')
+})
+
+test.each([
+  ['a plain message', MessageType.Default],
+  ['a reply', MessageType.Reply],
+  ['a slash-command response', MessageType.ChatInputCommand],
+])('%s carries no system attribute', async (_, type) => {
+  const meta = await inboundMeta(mkMsg({ authorId: TEAMMATE, type }), [], defaultAccess())
+  expect(meta.system).toBeUndefined()
 })
