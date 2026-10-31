@@ -43,7 +43,8 @@ Arguments passed: `$ARGUMENTS`
       "createdAt": <ms>, "expiresAt": <ms>
     }
   },
-  "mentionPatterns": ["@mybot"]
+  "mentionPatterns": ["@mybot"],
+  "batchQuietMs": 0
 }
 ```
 
@@ -118,13 +119,20 @@ never deliver.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`. Validate types:
+`textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`,
+`batchQuietMs`, `batchMaxMs`, `batchMentionQuietMs`. Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
 - `suppressEmbeds`: boolean — strip link preview cards from replies (default true)
 - `mentionPatterns`: JSON array of regex strings
+- `batchQuietMs`: number of milliseconds — hold a chat's messages until it goes
+  quiet this long, then deliver them as one event. `0` (the default) is off.
+- `batchMaxMs`: number — ceiling on a hold, from the first message held.
+  Absent = 3x `batchQuietMs`.
+- `batchMentionQuietMs`: number — the window used instead once a held message
+  addresses the bot. Absent = `0`, delivering at once.
 
 Read, set the key, write, confirm.
 

@@ -128,6 +128,12 @@ type Access = {
   chunkMode?: 'length' | 'newline'
   /** Strip link preview cards from outbound messages. Default: true. */
   suppressEmbeds?: boolean
+  /** Hold a chat's messages until it has been quiet this long, then deliver them as one event. 0 or absent = off. */
+  batchQuietMs?: number
+  /** Ceiling on a hold, measured from the first message held. Absent = 3x batchQuietMs. */
+  batchMaxMs?: number
+  /** Quiet window once a held message addresses the bot. Absent = 0, which delivers at once. */
+  batchMentionQuietMs?: number
 }
 
 export function defaultAccess(): Access {
@@ -179,6 +185,9 @@ export function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      batchQuietMs: parsed.batchQuietMs,
+      batchMaxMs: parsed.batchMaxMs,
+      batchMentionQuietMs: parsed.batchMentionQuietMs,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -478,6 +487,8 @@ export const mcp = new Server(
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       'A tag with event="reaction" is someone reacting to a message, with the emoji in reaction and the message in message_id. A 👍 on something you posted is an answer to it, not a new request.',
+      '',
+      'A tag with batch="true" carries several messages the chat sent while you were busy, each in its own <message> with its own message_id, user_id and ts; the batch tag\'s own message_id and ts are the newest message\'s. Read them as one stretch of conversation and reply once, to whichever message needs it.',
       '',
       "fetch_messages pulls real Discord history, page back with before=<oldest id returned>. Discord's search API isn't available to bots — if the user asks you to find an old message, page back or ask them roughly when it was.",
       '',
@@ -914,10 +925,11 @@ let instanceLock: { release(): void } | null = null
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
+  const flushed = flushAllChats()
   instanceLock?.release()
   process.stderr.write('discord channel: shutting down\n')
   setTimeout(() => process.exit(0), 2000)
-  void Promise.resolve(client.destroy()).finally(() => process.exit(0))
+  void flushed.then(() => client.destroy()).finally(() => process.exit(0))
 }
 client.on('error', err => {
   process.stderr.write(`discord channel: client error: ${err}\n`)
@@ -1057,15 +1069,7 @@ export async function handleInbound(msg: Message): Promise<void> {
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
 
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content,
-      meta: await inboundMeta(msg, atts, access),
-    },
-  }).catch(err => {
-    process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  deliverInbound({ content, meta: await inboundMeta(msg, atts, access) }, access)
 }
 
 // Addressing signals. Without reply_to and mentions_bot, a reply to another
@@ -1126,6 +1130,121 @@ function channelMeta(ch: Channel): Record<string, string> {
   return meta
 }
 
+export type HeldInbound = { content: string; meta: Record<string, string> }
+
+type Batch = {
+  items: HeldInbound[]
+  addressed: boolean
+  quiet?: ReturnType<typeof setTimeout>
+  cap?: ReturnType<typeof setTimeout>
+}
+
+const batches = new Map<string, Batch>()
+
+// Every delivered event is a turn of the session, so a busy channel costs one
+// per line. Held per chat and delivered together, a burst costs one.
+export function deliverInbound(held: HeldInbound, access: Access): void {
+  const quiet = batchWindow(access.batchQuietMs, 0)
+  const chat_id = held.meta.chat_id ?? ''
+  if (quiet <= 0 || !chat_id) {
+    void emitInbound(held)
+    return
+  }
+
+  let batch = batches.get(chat_id)
+  if (!batch) {
+    batch = { items: [], addressed: false }
+    batches.set(chat_id, batch)
+    // The ceiling runs from the first message held and is never extended.
+    batch.cap = arm(batchWindow(access.batchMaxMs, quiet * 3), chat_id)
+  }
+  batch.items.push(held)
+  batch.addressed ||=
+    held.meta.mentions_bot === 'true' || held.meta.on_own_message === 'true'
+
+  clearTimeout(batch.quiet)
+  const delay = batch.addressed ? batchWindow(access.batchMentionQuietMs, 0) : quiet
+  if (delay <= 0) {
+    void flushChat(chat_id)
+    return
+  }
+  batch.quiet = arm(delay, chat_id)
+}
+
+export function flushChat(chat_id: string): Promise<void> {
+  const batch = batches.get(chat_id)
+  if (!batch) return Promise.resolve()
+  batches.delete(chat_id)
+  clearTimeout(batch.quiet)
+  clearTimeout(batch.cap)
+  if (batch.items.length === 0) return Promise.resolve()
+  return emitInbound(batch.items.length === 1 ? batch.items[0]! : mergeHeld(batch.items))
+}
+
+/** Shutdown hook. A SIGKILL loses what is held — the messages are still in Discord, and fetch_messages reaches them. */
+export function flushAllChats(): Promise<void> {
+  return Promise.all([...batches.keys()].map(flushChat)).then(() => {})
+}
+
+// Attributes describing the chat hoist to the batch tag; everything else stays
+// on its own <message>, so reply_to, react and download_attachment keep working.
+const CHAT_META = ['chat_id', 'channel_name', 'thread', 'parent_id']
+
+export function mergeHeld(items: HeldInbound[]): HeldInbound {
+  const last = items[items.length - 1]!
+  const meta: Record<string, string> = {}
+  for (const key of CHAT_META) {
+    if (last.meta[key] !== undefined) meta[key] = last.meta[key]!
+  }
+  if (last.meta.message_id !== undefined) meta.message_id = last.meta.message_id
+  if (last.meta.ts !== undefined) meta.ts = last.meta.ts
+  meta.mentions_bot = String(items.some(i => i.meta.mentions_bot === 'true'))
+  meta.batch = 'true'
+  meta.message_count = String(items.length)
+
+  const content = items
+    .map(item => {
+      const attrs = Object.entries(item.meta)
+        .filter(([key]) => !CHAT_META.includes(key))
+        .map(([key, value]) => ` ${key}="${attrValue(value)}"`)
+        .join('')
+      return `<message${attrs}>\n${fenceMessageTag(item.content)}\n</message>`
+    })
+    .join('\n')
+  return { content, meta }
+}
+
+function emitInbound(held: HeldInbound): Promise<void> {
+  return mcp
+    .notification({
+      method: 'notifications/claude/channel',
+      params: { content: held.content, meta: held.meta },
+    })
+    .catch(err => {
+      process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
+    })
+}
+
+function batchWindow(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function arm(ms: number, chat_id: string): ReturnType<typeof setTimeout> {
+  const timer = setTimeout(() => void flushChat(chat_id), ms)
+  timer.unref?.()
+  return timer
+}
+
+// A sender typing the tag would forge a line from someone else inside the
+// batch. The host neuters </channel> in content for the same reason.
+function fenceMessageTag(text: string): string {
+  return text.replace(/<(?=\/?\s*message\b)/gi, '<\\')
+}
+
+function attrValue(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').replace(/["<>]/g, '')
+}
+
 client.on('messageReactionAdd', (reaction, user) => {
   handleReaction(reaction, user).catch(e => process.stderr.write(`discord: handleReaction failed: ${e}\n`))
 })
@@ -1162,9 +1281,8 @@ export async function handleReaction(
     ? `<:${reaction.emoji.name}:${reaction.emoji.id}>`
     : reaction.emoji.name ?? '?'
 
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
+  deliverInbound(
+    {
       content: `(reacted ${emoji})`,
       meta: {
         event: 'reaction',
@@ -1178,9 +1296,8 @@ export async function handleReaction(
         ...channelMeta(ch),
       },
     },
-  }).catch(err => {
-    process.stderr.write(`discord channel: failed to deliver reaction to Claude: ${err}\n`)
-  })
+    access,
+  )
 }
 
 async function messageAuthorId(msg: Message | PartialMessage): Promise<string | null> {
