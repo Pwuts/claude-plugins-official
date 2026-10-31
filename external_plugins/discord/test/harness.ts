@@ -30,6 +30,10 @@ type MsgOpts = {
   reference?: { messageId: string } | null
   mentions?: string[]
   mentionsBot?: boolean
+  /** @everyone or @here, which discord.js counts as mentioning every member. */
+  everyone?: boolean
+  /** The author's DMs refuse the bot, as Discord does with error 50007. */
+  dmsClosed?: boolean
   attachments?: any[]
   reference_author?: string
 }
@@ -107,18 +111,28 @@ export function mkMsg(o: MsgOpts = {}): any {
       id: o.authorId ?? '500000000000000001',
       username: o.username ?? 'someone',
       bot: o.bot ?? false,
+      dms: [] as any[],
+      send: async (payload: any) => {
+        if (o.dmsClosed) throw Object.assign(new Error('Cannot send messages to this user'), { code: 50007 })
+        msg.author.dms.push(payload)
+      },
     },
     createdAt: new Date('2026-09-07T01:23:45.000Z'),
     attachments: new Map((o.attachments ?? []).map((a, i) => [String(i), a])),
     reference: o.reference ?? null,
     mentions: {
       users,
-      has: (u: any) => users.has(typeof u === 'string' ? u : u?.id),
+      has: (u: any, opts?: { ignoreEveryone?: boolean }) =>
+        (!!o.everyone && !opts?.ignoreEveryone) || users.has(typeof u === 'string' ? u : u?.id),
     },
     reactions: [] as string[],
-    replies: [] as string[],
+    replies: [] as any[],
     react: async (e: string) => { msg.reactions.push(e) },
-    reply: async (t: string) => { msg.replies.push(t) },
+    reply: async (payload: any) => {
+      const sent = { payload, deleted: false, delete: async () => { sent.deleted = true } }
+      msg.replies.push(sent)
+      return sent
+    },
     fetchReference: async () => {
       if (!o.reference) throw new Error('no reference')
       const ref = channel.messages ? await channel.messages.fetch(o.reference.messageId) : null
