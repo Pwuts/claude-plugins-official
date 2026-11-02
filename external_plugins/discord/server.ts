@@ -38,6 +38,7 @@ import {
   type Channel,
   type Attachment,
   type Interaction,
+  type Embed,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -1087,9 +1088,29 @@ export async function handleInbound(msg: Message): Promise<void> {
 
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
-  const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
+  const base = msg.content || (atts.length > 0 ? '(attachment)' : '')
+  // Bots like Sentry post their whole alert as an embed with empty content —
+  // without this the message arrives empty.
+  const embeds = embedText(msg.embeds)
+  const content = embeds ? (base ? `${base}\n\n${embeds}` : embeds) : base
 
   deliverInbound({ content, meta: await inboundMeta(msg, atts, access) }, access)
+}
+
+const EMBED_TEXT_CAP = 4000
+
+export function embedText(embeds: readonly Embed[] | undefined): string {
+  const blocks: string[] = []
+  for (const embed of embeds ?? []) {
+    const lines: string[] = []
+    if (embed.title) lines.push(embed.url ? `${embed.title} (${embed.url})` : embed.title)
+    if (embed.description) lines.push(embed.description)
+    for (const field of embed.fields) lines.push(`${field.name}: ${field.value}`)
+    if (embed.footer?.text) lines.push(embed.footer.text)
+    if (lines.length > 0) blocks.push(lines.join('\n'))
+  }
+  const text = blocks.join('\n\n')
+  return text.length > EMBED_TEXT_CAP ? `${text.slice(0, EMBED_TEXT_CAP)}…` : text
 }
 
 const UNLISTED_NOTICE_EVERY_MS = 60 * 60 * 1000

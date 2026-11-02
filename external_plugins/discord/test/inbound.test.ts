@@ -1,7 +1,7 @@
 import { expect, test, beforeEach, afterAll } from 'bun:test'
 import { ChannelType, MessageType } from 'discord.js'
-import { BOT_ID, captureNotifications, cleanup, mkChannel, mkMsg, writeAccess } from './harness'
-import { client, defaultAccess, handleInbound, inboundMeta, mcp } from '../server'
+import { BOT_ID, captureNotifications, cleanup, mkChannel, mkEmbed, mkMsg, writeAccess } from './harness'
+import { client, defaultAccess, embedText, handleInbound, inboundMeta, mcp } from '../server'
 
 client.user = { id: BOT_ID, username: 'claude' } as any
 
@@ -129,4 +129,81 @@ test.each([
 ])('%s carries no system attribute', async (_, type) => {
   const meta = await inboundMeta(mkMsg({ authorId: TEAMMATE, type }), [], defaultAccess())
   expect(meta.system).toBeUndefined()
+})
+
+test('embedText renders title+url, description, fields and footer', () => {
+  const embed = mkEmbed({
+    title: 'Alert: high error rate',
+    url: 'https://sentry.io/issues/123',
+    description: 'Something broke.',
+    fields: [{ name: 'Project', value: 'platform-backend' }],
+    footer: { text: 'Sentry' },
+  })
+  expect(embedText([embed])).toBe(
+    'Alert: high error rate (https://sentry.io/issues/123)\nSomething broke.\nProject: platform-backend\nSentry',
+  )
+})
+
+test('embedText skips parts the embed does not have', () => {
+  expect(embedText([mkEmbed({ title: 'just a title' })])).toBe('just a title')
+})
+
+test('embedText joins several embeds with a blank line', () => {
+  const text = embedText([mkEmbed({ title: 'first' }), mkEmbed({ title: 'second' })])
+  expect(text).toBe('first\n\nsecond')
+})
+
+test('embedText is empty for no embeds', () => {
+  expect(embedText([])).toBe('')
+  expect(embedText(undefined)).toBe('')
+})
+
+test('embedText caps long embed text with an ellipsis', () => {
+  const text = embedText([mkEmbed({ description: 'x'.repeat(5000) })])
+  expect(text.length).toBe(4001)
+  expect(text.endsWith('…')).toBe(true)
+})
+
+test('a Sentry-style alert with an empty-content embed arrives with the embed text as content', async () => {
+  const capture = captureNotifications(mcp)
+  try {
+    const msg = mkMsg({
+      authorId: TEAMMATE,
+      content: '',
+      embeds: [
+        mkEmbed({
+          title: 'high error rate',
+          url: 'https://sentry.io/issues/123',
+          fields: [{ name: 'Project', value: 'platform-backend' }],
+        }),
+      ],
+    })
+    await handleInbound(msg)
+    expect(capture.notes.length).toBe(1)
+    expect(capture.notes[0].params.content).toBe(
+      'high error rate (https://sentry.io/issues/123)\nProject: platform-backend',
+    )
+  } finally {
+    capture.restore()
+  }
+})
+
+test('an embed on a message that also has text is appended after it', async () => {
+  const capture = captureNotifications(mcp)
+  try {
+    await handleInbound(mkMsg({ authorId: TEAMMATE, content: 'look at this', embeds: [mkEmbed({ title: 'linked page' })] }))
+    expect(capture.notes[0].params.content).toBe('look at this\n\nlinked page')
+  } finally {
+    capture.restore()
+  }
+})
+
+test('a message with no embeds is unchanged', async () => {
+  const capture = captureNotifications(mcp)
+  try {
+    await handleInbound(mkMsg({ authorId: TEAMMATE, content: 'plain text' }))
+    expect(capture.notes[0].params.content).toBe('plain text')
+  } finally {
+    capture.restore()
+  }
 })
