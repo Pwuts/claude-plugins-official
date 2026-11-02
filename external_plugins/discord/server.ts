@@ -114,6 +114,8 @@ type GroupPolicy = {
 type Access = {
   dmPolicy: 'pairing' | 'allowlist' | 'disabled'
   allowFrom: string[]
+  /** Bot user ids that pass a channel's bot check in every listed channel, without needing that channel's allowBots. */
+  trustedBots?: string[]
   /** Keyed on channel ID (snowflake), not guild ID. One entry per guild channel. */
   groups: Record<string, GroupPolicy>
   pending: Record<string, PendingEntry>
@@ -178,6 +180,7 @@ export function readAccessFile(): Access {
     return {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],
+      trustedBots: parsed.trustedBots,
       groups: parsed.groups ?? {},
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
@@ -318,7 +321,9 @@ export async function gate(msg: Message): Promise<GateResult> {
   }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
-  if (msg.author.bot && !policy.allowBots) return { action: 'drop' }
+  if (msg.author.bot && !policy.allowBots && !access.trustedBots?.includes(senderId)) {
+    return { action: 'drop' }
+  }
   if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
     return { action: 'drop' }
   }
@@ -1325,7 +1330,7 @@ export async function handleReaction(
 
   const policy = access.groups[ch.isThread() ? ch.parentId ?? ch.id : ch.id]
   if (!policy?.reactions) return
-  if (user.bot && !policy.allowBots) return
+  if (user.bot && !policy.allowBots && !access.trustedBots?.includes(user.id)) return
   const allowFrom = policy.allowFrom ?? []
   if (allowFrom.length > 0 && !allowFrom.includes(user.id)) return
 
