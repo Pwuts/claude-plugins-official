@@ -34,6 +34,7 @@ Arguments passed: `$ARGUMENTS`
 {
   "dmPolicy": "pairing",
   "allowFrom": ["<senderId>", ...],
+  "trustedBots": ["<botUserId>", ...],
   "groups": {
     "<channelId>": { "requireMention": true, "allowFrom": [], "allowBots": false, "reactions": false }
   },
@@ -120,13 +121,17 @@ never deliver.
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
 `textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`,
-`batchQuietMs`, `batchMaxMs`, `batchMentionQuietMs`. Validate types:
+`trustedBots`, `batchQuietMs`, `batchMaxMs`, `batchMentionQuietMs`. Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
 - `suppressEmbeds`: boolean — strip link preview cards from replies (default true)
 - `mentionPatterns`: JSON array of regex strings
+- `trustedBots`: JSON array of bot user snowflakes. Each passes the bot check
+  in every listed channel (and its threads), even without that channel's
+  `allowBots` — a bot we collaborate with, not an alert feed. `allowFrom` and
+  `requireMention` still apply.
 - `batchQuietMs`: number of milliseconds — hold a chat's messages until it goes
   quiet this long, then deliver them as one event. `0` (the default) is off.
 - `batchMaxMs`: number — ceiling on a hold, from the first message held.

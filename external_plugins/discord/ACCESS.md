@@ -72,6 +72,12 @@ Messages from other bots and from webhooks are dropped everywhere by default: an
 
 Bot-authored messages arrive with `author_is_bot="true"` and get no typing indicator and no ack reaction — those are for a human waiting on an answer.
 
+A bot we collaborate with — one that posts things worth acting on, rather than an alert feed — can be trusted globally instead of per channel with `trustedBots`. A trusted bot's id passes the bot check in every listed channel (and its threads), with no need to turn on `--allow-bots` anywhere. It still has to clear that channel's `allowFrom` and `requireMention` like anyone else, and it stays dropped in channels that aren't opted in at all.
+
+```
+/discord:access set trustedBots '["184695080709324800"]'
+```
+
 ### Reactions
 
 Emoji reactions are not delivered unless a channel opts in with `--reactions`. A 👍 on an answer is often the whole reply, and without this the assistant never sees it.
@@ -164,7 +170,7 @@ Held messages are flushed when the server shuts down. A kill that skips shutdown
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--allow-bots`, `--reactions`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
-| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`, `batchQuietMs`, `batchMaxMs`, `batchMentionQuietMs`. |
+| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `suppressEmbeds`, `mentionPatterns`, `trustedBots`, `batchQuietMs`, `batchMaxMs`, `batchMentionQuietMs`. |
 
 ## Config file
 
@@ -177,6 +183,10 @@ Held messages are flushed when the server shuts down. A kill that skips shutdown
 
   // User snowflakes allowed to DM.
   "allowFrom": ["184695080709324800"],
+
+  // Bot user snowflakes that pass the bot check in every listed channel,
+  // without that channel's allowBots. Absent = none.
+  "trustedBots": [],
 
   // Guild channels the bot is active in. Empty object = DM-only.
   "groups": {
