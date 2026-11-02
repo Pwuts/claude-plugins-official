@@ -14,6 +14,7 @@ This is a fork of the [official Discord plugin](https://github.com/anthropics/cl
 - Get told a message no longer exists, instead of Discord's bare "Unknown Message".
 - Tell someone who @mentions the bot in a channel it isn't opted into why nothing happens, instead of leaving them in silence.
 - Let a channel deliver other bots' and webhooks' messages with `--allow-bots`, so an alert feed reaches the assistant.
+- Carry an embed's title, description, fields and footer as text, so a bot (Sentry among them) that posts its whole alert as an embed with no `content` doesn't arrive empty.
 - Receive emoji reactions as events in channels opted in with `--reactions` — a 👍 is often the whole reply.
 - Hold a busy chat's messages and deliver the burst as one event with `batchQuietMs`, so a room full of people talking to each other doesn't cost a turn per line. A message aimed at the bot skips the wait.
 - Post replies without link preview cards by default, so a message carrying ten links doesn't take over the channel.
@@ -138,6 +139,11 @@ the bot is not addressed to the assistant.
 | `system` | Present when Discord posted the message itself, naming its type in snake case (`channel_name_change`, `channel_pinned_message`, `thread_created`, …). The author is whoever triggered it, and the text is kept: a rename's text is the new name. |
 | `attachment_count` / `attachments` | Present when the message has attachments; see below. |
 | `batch` / `message_count` | Present when several messages were held and delivered together, each in its own `<message>` tag inside. Off unless `batchQuietMs` is set — see [ACCESS.md](./ACCESS.md#batching-inbound-messages). |
+
+When the message carries an embed — a bot alert like Sentry's, or Discord's own
+link preview — its title (with URL), description, fields (`name: value`) and
+footer text are appended to the message text, separated by a blank line from
+whatever `content` carried. A message with no embeds is unaffected.
 
 ## Tools exposed to the assistant
 

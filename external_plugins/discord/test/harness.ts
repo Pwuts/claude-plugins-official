@@ -35,6 +35,7 @@ type MsgOpts = {
   /** The author's DMs refuse the bot, as Discord does with error 50007. */
   dmsClosed?: boolean
   attachments?: any[]
+  embeds?: any[]
   reference_author?: string
   type?: MessageType
 }
@@ -124,6 +125,7 @@ export function mkMsg(o: MsgOpts = {}): any {
     },
     createdAt: new Date('2026-09-07T01:23:45.000Z'),
     attachments: new Map((o.attachments ?? []).map((a, i) => [String(i), a])),
+    embeds: o.embeds ?? [],
     reference: o.reference ?? null,
     mentions: {
       users,
@@ -152,6 +154,23 @@ export function mkMsg(o: MsgOpts = {}): any {
     },
   }
   return msg
+}
+
+/** Shape of discord.js's Embed getters — title/description/url null when unset. */
+export function mkEmbed(o: {
+  title?: string
+  url?: string
+  description?: string
+  fields?: { name: string; value: string; inline?: boolean }[]
+  footer?: { text: string }
+} = {}): any {
+  return {
+    title: o.title ?? null,
+    url: o.url ?? null,
+    description: o.description ?? null,
+    fields: o.fields ?? [],
+    footer: o.footer ?? null,
+  }
 }
 
 /** Replaces mcp.notification with a collector. Returns the collected params. */
