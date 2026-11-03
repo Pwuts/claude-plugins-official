@@ -87,6 +87,13 @@ Writes `DISCORD_BOT_TOKEN=...` to `~/.claude/channels/discord/.env`. You can als
 > connection, so two of them answer the same message twice. A lock left behind
 > by a crashed process is reclaimed on the next start; `instance.lock` only
 > needs deleting by hand if its pid has been reused by something else.
+>
+> **Only the channel session connects.** Every Claude Code process that loads the
+> plugin starts this server, background sessions included, so it connects only
+> when the Claude Code process above it was started with `--channels` (or
+> `--dangerously-load-development-channels`) naming this plugin, and otherwise
+> exits quietly. Set `DISCORD_CHANNEL_HOST=1` to connect where that check can't
+> see the launch, or `0` to never connect.
 
 **6. Relaunch with the channel flag.**
 

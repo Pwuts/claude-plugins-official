@@ -871,6 +871,77 @@ export async function callTool(name: string, args: Record<string, unknown>) {
   }
 }
 
+// Every Claude process loading this plugin starts this server (background spares,
+// dispatched agents), so only the one started with `--channels` may take the gateway.
+export function channelHost(
+  env: NodeJS.ProcessEnv,
+  startPid: number,
+  proc: ProcReader = linuxProc,
+): { ok: boolean; why: string } {
+  if (env.DISCORD_CHANNEL_HOST === '1') return { ok: true, why: 'DISCORD_CHANNEL_HOST=1' }
+  if (env.DISCORD_CHANNEL_HOST === '0') return { ok: false, why: 'DISCORD_CHANNEL_HOST=0' }
+  const claude = findClaudeAncestor(startPid, proc)
+  // No /proc, or a host we don't recognise: keep the old behaviour and connect.
+  if (!claude) return { ok: true, why: 'no Claude process found among the parents' }
+  return launchedAsChannel(claude.argv)
+    ? { ok: true, why: `Claude pid ${claude.pid} was started with --channels for this plugin` }
+    : { ok: false, why: `Claude pid ${claude.pid} was not started with --channels plugin:discord` }
+}
+
+// `--channels a b` or `--channels=a,b`, entries `plugin:discord@<marketplace>`; a
+// local marketplace passes them as --dangerously-load-development-channels instead.
+const CHANNEL_FLAGS = ['--channels', '--dangerously-load-development-channels']
+export function launchedAsChannel(argv: string[]): boolean {
+  const entries: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!
+    const eq = CHANNEL_FLAGS.find(f => a.startsWith(`${f}=`))
+    if (eq) entries.push(a.slice(eq.length + 1))
+    else if (CHANNEL_FLAGS.includes(a)) {
+      while (i + 1 < argv.length && !argv[i + 1]!.startsWith('-')) entries.push(argv[++i]!)
+    }
+  }
+  return entries
+    .flatMap(e => e.split(','))
+    .some(e => /^plugin:discord(@|$)/.test(e.trim()))
+}
+
+type ProcReader = { argv(pid: number): string[] | null; ppid(pid: number): number | null }
+
+function findClaudeAncestor(startPid: number, proc: ProcReader): { pid: number; argv: string[] } | null {
+  let pid: number | null = startPid
+  for (let depth = 0; pid && pid > 1 && depth < 10; depth++) {
+    const argv = proc.argv(pid)
+    if (!argv) return null
+    // A background spare retitles itself: its argv[0] is the one string `claude bg-spare`.
+    if (argv.slice(0, 2).some(a => a.split(' ')[0]!.split('/').pop() === 'claude' || /\/claude-code\/cli\.m?js$/.test(a))) {
+      return { pid, argv }
+    }
+    pid = proc.ppid(pid)
+  }
+  return null
+}
+
+const linuxProc: ProcReader = {
+  argv(pid) {
+    try {
+      return readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean)
+    } catch {
+      return null
+    }
+  },
+  ppid(pid) {
+    try {
+      // The comm field is parenthesised and may hold spaces; ppid is the 2nd field after it.
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1])
+      return Number.isInteger(ppid) ? ppid : null
+    } catch {
+      return null
+    }
+  },
+}
+
 // One gateway connection per token: a second one gets its own copy of every
 // event, so two sessions answer the same message. Keyed on the state dir,
 // which is already the per-bot key (DISCORD_STATE_DIR).
@@ -1403,6 +1474,12 @@ client.once('ready', c => {
 if (import.meta.main) await main()
 
 async function main(): Promise<void> {
+  const host = channelHost(process.env, process.ppid)
+  if (!host.ok) {
+    process.stderr.write(`discord channel: ${host.why}; not connecting. DISCORD_CHANNEL_HOST=1 overrides.\n`)
+    process.exit(0)
+  }
+
   if (!TOKEN) {
     process.stderr.write(
       `discord channel: DISCORD_BOT_TOKEN required\n` +
